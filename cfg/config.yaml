@@ -1,0 +1,12 @@
+defaults:
+- _self_
+- data: data
+- learning: learning
+- hydra: hydra
+
+inference: True
+inference_path: /home/nibdombe/deep_eit/outputs/2024-03-21/11-36-11
+
+wandb:
+  project: deep_eit
+

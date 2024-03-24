@@ -1,0 +1,23 @@
+model:
+  _target_: model.simple_model.BaseModel
+  conv_out_channels: 32 
+  conv_in_channels: 1 
+  conv_blocks: 5 
+  conv_features: 128 
+  nodes_resistance_network: 256
+  resistance_network_blocks: 4
+  nodes_signal_network: 256 
+  signal_network_blocks: 4
+  num_encoding_functions: 6
+  num_electrodes: 16
+
+training:
+  epochs: 100
+  batch_size_train: 16
+  batch_size_val: 2
+  learning_rate: 0.0001
+  device: cuda
+
+testing:
+  batch_size_test: 2
+

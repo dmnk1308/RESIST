@@ -1,0 +1,7 @@
+side_processing/old
+deep_eit.*
+data
+outputs
+*__pycache*
+singularity
+

@@ -4,7 +4,7 @@ defaults:
 - learning: learning
 - hydra: hydra
 
-inference: True
+inference: False
 inference_path: /home/nibdombe/deep_eit/outputs/2024-03-21/11-36-11
 
 wandb:

@@ -13,12 +13,21 @@ def load_signals(return_square=True, dir=None):
     signal_dir  = os.path.join(dir,'signals')
     case_signal = []
     case_signals_files = os.listdir(signal_dir)
-    case_signals_files = [f for f in case_signals_files if f.endswith('.get') & fnmatch.fnmatch(f, 'level_*_*.get')]
-    case_signals_files.sort()
+    case_signals_files = [f for f in case_signals_files if fnmatch.fnmatch(f, 'level_*_*.*')]
+    def custom_sort(s):
+        idx1 = int(s.split('_')[1]) 
+        idx2 = int(s.split('_')[2].split('.')[0]) 
+        return idx1, idx2
+    case_signals_files = sorted(case_signals_files, key=custom_sort)
     
     for case_signal_file in case_signals_files:
         try:
-            signal = read_get(signal_dir + '/' + case_signal_file)
+            if case_signal_file.endswith('.get'):
+                signal = read_get(signal_dir + '/' + case_signal_file)
+            elif case_signal_file.endswith('.npy'):
+                signal = np.load(signal_dir + '/' + case_signal_file)
+            else:
+                print(f'Check signal files for {case_signal_file}!')
             if return_square == True:
                 signal_matrix = np.zeros((16,16))
                 for i in range(16):

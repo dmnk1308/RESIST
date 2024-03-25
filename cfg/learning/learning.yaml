@@ -1,5 +1,5 @@
 model:
-  _target_: model.simple_model.BaseModel
+  _target_: model.simple_model.Model
   conv_out_channels: 32 
   conv_in_channels: 1 
   conv_blocks: 5 
@@ -14,7 +14,7 @@ model:
 training:
   epochs: 100
   batch_size_train: 16
-  batch_size_val: 2
+  batch_size_val: 4
   learning_rate: 0.0001
   device: cuda
 

@@ -1,12 +1,12 @@
 import matplotlib.pyplot as plt
 import wandb
 
-def log_heatmaps(targets, preds):
+def log_heatmaps(targets, preds, n_examples=20):
     # log qualitative results
     n_res = 4
     targets_case = targets.detach().cpu().numpy().squeeze().reshape(-1, n_res, 512, 512)
     preds_case = preds.detach().cpu().numpy().squeeze().reshape(-1, n_res, 512, 512)
-    for i in range(20):
+    for i in range(n_examples):
         fig, axes = plt.subplots(n_res, 2)
         cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])  # [left, bottom, width, height]
         for resistancy in range(n_res):

@@ -24,6 +24,7 @@ class Model(nn.Module):
                  nodes_signal_network=512, signal_network_blocks=4,
                  mask_resolution=512, num_encoding_functions=6, num_electrodes=16, no_weights=False, **kwargs):
         super(Model, self).__init__()
+        self.num_encoding_functions = num_encoding_functions
         self.no_weights = no_weights
         # process mask
         self.mask_conv = nn.ModuleList()

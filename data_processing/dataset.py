@@ -18,8 +18,12 @@ def write_npz_case(case, raw_data_folder="data/raw", processed_data_folder="data
     
     signal_dir = os.path.join(case_dir, 'signals')
     case_signals_files = os.listdir(signal_dir)
-    case_signals_files = [file for file in case_signals_files if fnmatch.fnmatch(file, 'level_*_*.get')]
-    case_signals_files.sort()
+    case_signals_files = [file for file in case_signals_files if fnmatch.fnmatch(file, 'level_*_*.*')]
+    def custom_sort(s):
+        idx1 = int(s.split('_')[1]) 
+        idx2 = int(s.split('_')[2].split('.')[0]) 
+        return idx1, idx2
+    case_signals_files = sorted(case_signals_files, key=custom_sort)
     # get the level number
     case_signals_files_short = [int(f[6]) for f in case_signals_files]
     # get the lung rho
@@ -44,7 +48,7 @@ def make_npz(cases, raw_data_folder="data/raw", processed_data_folder="data/proc
         try:
             write_npz_case(case, raw_data_folder=raw_data_folder, processed_data_folder=processed_data_folder, resolution=resolution, electrode_resolution=electrode_resolution)
         except Exception as e:
-            print(case, 'could not be processed to .npz file.')
+            print(case, 'can not be processed to .npz file.')
             print(e)
 
 def make_dataset(cases, processed_data_folder="data/processed", resolution=128, electrode_resolution=512, mask_resolution=512, no_weights=False,

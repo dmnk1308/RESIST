@@ -62,7 +62,7 @@ def validation_step(model, dataloader, loss, device):
             preds = pred.detach().cpu().reshape(-1, 512, 512, 1)
             targets = targets.detach().cpu().reshape(-1, 512, 512, 1)
             # log qualitative results
-            log_heatmaps(targets, preds)
+            log_heatmaps(targets, preds, n_examples=1)
         epoch_loss += l.detach().cpu()
     epoch_loss /= (i+1)
     return epoch_loss

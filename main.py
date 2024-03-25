@@ -20,8 +20,8 @@ def get_all_cases(cfg: DictConfig, base_dir=".."):
         cases = os.listdir(os.path.join(base_dir,cfg.data.raw_data_folder))
         cases = [case.split('.')[0] for case in cases if fnmatch.fnmatch(case, 'case_TCIA*')]
         cases_number = [int(case.split('_')[-2]) for case in cases]
-        cases = [case for case, case_number in zip(cases, cases_number) if case_number < 190]
-        cases 
+        # cases = [case for case, case_number in zip(cases, cases_number) if case_number < 190]
+        # cases 
     else:
         cases = cfg.data.cases
     return cases

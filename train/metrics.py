@@ -7,3 +7,8 @@ def closest_class(preds):
     preds_diff = preds_repeated - class_resistancies
     preds_closest = torch.argmin(torch.abs(preds_diff), dim=1)
     return preds_closest
+
+def masked_mse(preds, targets, mask):
+    preds = preds[mask.bool()].reshape(-1)
+    targets = targets[mask.bool()].reshape(-1)
+    return ((preds - targets)**2).mean()

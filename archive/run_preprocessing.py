@@ -12,6 +12,7 @@ def get_TCIA_cases(cfg: DictConfig, base_dir=".."):
     if cfg.data.cases == 'all':
         cases = os.listdir(os.path.join(base_dir,cfg.data.raw_data_folder))
         cases = [case for case in cases if fnmatch.fnmatch(case, 'case_TCIA_*')]
+        cases_number = [int(case.split('_')[-2]) for case in cases]
         cases 
     else:
         cases = cfg.data.cases

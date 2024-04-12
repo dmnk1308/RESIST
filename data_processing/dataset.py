@@ -8,6 +8,8 @@ import cv2
 import numpy as np
 from data_processing.obj2py import read_egt, read_get
 from data_processing.preprocessing import load_mask_target_electrodes, load_tomograms, load_signals, write_data
+from scipy.spatial.transform import Rotation as R
+import torchvision.transforms.functional as TF
 
 def write_npz_case(case, raw_data_folder="data/raw", processed_data_folder="data/processed", resolution=128, electrode_resolution=512):
     # how many levels and how many measurements per level do we have?
@@ -43,15 +45,17 @@ def write_npz_case(case, raw_data_folder="data/raw", processed_data_folder="data
     # save to file
     np.savez_compressed(case_dir_processed, signals=signal, targets=target, masks=mask, electrodes=electrode)
 
-def make_npz(cases, raw_data_folder="data/raw", processed_data_folder="data/processed", resolution=128, electrode_resolution=512):
+def make_npz(cases, raw_data_folder="data/raw", processed_data_folder="data/processed", resolution=512, electrode_resolution=512, override_npz=False):
     for case in tqdm(cases):
+        if os.path.exists(os.path.join(processed_data_folder, case+'.npz')) and not override_npz:
+            continue
         try:
             write_npz_case(case, raw_data_folder=raw_data_folder, processed_data_folder=processed_data_folder, resolution=resolution, electrode_resolution=electrode_resolution)
         except Exception as e:
             print(case, 'can not be processed to .npz file.')
             print(e)
 
-def make_dataset(cases, processed_data_folder="data/processed", resolution=128, electrode_resolution=512, mask_resolution=512, no_weights=False,
+def make_dataset(cases, processed_data_folder="data/processed", resolution=128, electrode_resolution=512, mask_resolution=512, no_weights=False, n_sample_points=10000,
                  path_test_dataset="data/datasets/test_dataset.pt", path_val_dataset="data/datasets/val_dataset.pt", path_train_dataset="data/datasets/train_dataset.pt"):
     # load .npz files
     signals = [] 
@@ -90,9 +94,18 @@ def make_dataset(cases, processed_data_folder="data/processed", resolution=128, 
     test_masks = torch.cat(masks[number_training_cases+number_validation_cases:], axis=0)
     test_electrodes = torch.cat(electrodes[number_training_cases+number_validation_cases:], axis=0)
 
-    train_dataset = EITData(train_signals, train_targets, train_masks, train_electrodes, resolution=resolution, training=True, no_weights=no_weights)
-    val_dataset = EITData(val_signals, val_targets, val_masks, val_electrodes, resolution=resolution, training=False, no_weights=no_weights)
-    test_dataset = EITData(test_signals, test_targets, test_masks, test_electrodes, resolution=resolution, training=False, no_weights=no_weights)
+    train_signal_mean = train_signals.mean()
+    train_signal_std = train_signals.std()
+    train_signals = (train_signals - train_signal_mean) / train_signal_std
+    test_signals = (test_signals - train_signal_mean) / train_signal_std
+    val_signals = (val_signals - train_signal_mean) / train_signal_std
+
+    train_dataset = EITData(train_signals, train_targets, train_masks, train_electrodes, resolution=resolution, training=True, 
+                            no_weights=no_weights, n_sample_points=n_sample_points, train_mean=train_signal_mean, train_std=train_signal_std)
+    val_dataset = EITData(val_signals, val_targets, val_masks, val_electrodes, resolution=resolution, training=False, no_weights=no_weights, 
+                          train_mean=train_signal_mean, train_std=train_signal_std)
+    test_dataset = EITData(test_signals, test_targets, test_masks, test_electrodes, resolution=resolution, training=False, no_weights=no_weights, 
+                           train_mean=train_signal_mean, train_std=train_signal_std)
     print(f'Training set: {len(train_dataset)}, validation set: {len(val_dataset)}, test set: {len(test_dataset)}')
 
     torch.save(train_dataset, path_train_dataset)
@@ -100,7 +113,7 @@ def make_dataset(cases, processed_data_folder="data/processed", resolution=128, 
     torch.save(test_dataset, path_test_dataset)
 
 
-def load_dataset(cases, resolution=128, electrode_resolution=512, mask_resolution=512,
+def load_dataset(cases, resolution=128, electrode_resolution=512, mask_resolution=512, n_sample_points=10000,
                  base_dir="..", raw_data_folder="data/raw", processed_data_folder="data/processed", dataset_data_folder="data/datasets", 
                  no_weights=False, name_prefix="", write_dataset=False, write_npz=False):
     # set up paths
@@ -115,7 +128,7 @@ def load_dataset(cases, resolution=128, electrode_resolution=512, mask_resolutio
         make_npz(cases, raw_data_folder=raw_data_folder, processed_data_folder=processed_data_folder, 
                  resolution=resolution, electrode_resolution=electrode_resolution)
     if write_dataset:
-        make_dataset(cases, processed_data_folder=processed_data_folder,
+        make_dataset(cases, processed_data_folder=processed_data_folder, n_sample_points=n_sample_points,
                      resolution=resolution, electrode_resolution=electrode_resolution, mask_resolution=mask_resolution, no_weights=no_weights, 
                      path_test_dataset=path_test_dataset, path_val_dataset=path_val_dataset, path_train_dataset=path_train_dataset)
 
@@ -125,7 +138,8 @@ def load_dataset(cases, resolution=128, electrode_resolution=512, mask_resolutio
     return train_dataset, val_dataset, test_dataset
     
 class EITData(Dataset):
-    def __init__(self, signals, targets, masks, electrodes, transform=None, training=True, resolution=128, n_samples=1000, point_mask=False, no_weights=False):
+    def __init__(self, signals, targets, masks, electrodes, transform=None, training=True, resolution=128, n_sample_points=1000,
+                 no_weights=False, train_mean=0, train_std=1):
         self.no_weights = no_weights
         self.resolution = resolution
         self.signals = signals
@@ -133,7 +147,7 @@ class EITData(Dataset):
         self.masks = masks
         electrodes[:,:,:2] = (electrodes[:,:,:2] / self.resolution) * 2 - 1
         self.electrodes = electrodes#[:,:,:2]
-        self.n_samples = n_samples
+        self.n_sample_points = n_sample_points
         self.training = training
         self.transform = transform
         self.no_weights = no_weights
@@ -152,11 +166,19 @@ class EITData(Dataset):
         self.impulses = impulses
         self.points = points
         self.weights = weights
-        self.point_mask = point_mask
-
 
     def __len__(self):
         return self.targets.shape[0]
+
+    def _random_rotation_matrix(self, rotation_angle):
+        rotation_matrix = torch.tensor([[np.cos(rotation_angle), -np.sin(rotation_angle)],
+                                        [np.sin(rotation_angle), np.cos(rotation_angle)]])
+        return rotation_matrix.float()
+
+    def _random_rotation_mask(self, mask, rotation_angle):
+        # Apply the rotation
+        rotated_mask = TF.rotate(mask.unsqueeze(0), rotation_angle)
+        return rotated_mask.squeeze()
     
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
@@ -169,12 +191,11 @@ class EITData(Dataset):
         impulse = self.impulses[idx]
 
         if self.training:
-            sample_indices = torch.multinomial(torch.ones(self.resolution**2).float(), self.n_samples, replacement=False)
+            sample_indices = torch.multinomial(torch.ones(self.resolution**2).float(), self.n_sample_points, replacement=False)
 
         else:
             sample_indices = torch.arange(self.resolution**2)
             
-        # points, weights = generate_points(impulse, resolution=self.resolution, no_weights=self.no_weights)
         points = self.points
         if self.no_weights:
             weights = torch.ones((1,1))
@@ -182,25 +203,25 @@ class EITData(Dataset):
             weights = self.weights[idx]
             weights = weights[sample_indices].float()
         points = points[sample_indices]
-        # positional_noise = (torch.rand(points.shape)/self.resolution) * 2 - 1
-        # points += positional_noise
-        # if self.no_weights == False:
-            # weights = get_angle_weights(impulse, points)
-            # weights = self.scalers[idx].angle_weights[sample_indices]
-            # signal = signal.unsqueeze(0) * weights
-        # else:
-            # signal = signal.unsqueeze(0).expand(points.shape[0], -1, -1)
 
-        electrode = torch.cat((impulse, electrode[:,2].unsqueeze(-1)), 1)
+        electrode = torch.cat((impulse, electrode[:,2].unsqueeze(-1)), 1).float()
         target = target.reshape(self.resolution**2, 1)[sample_indices]
         sample = [signal, mask.unsqueeze(0), electrode, points, target]
 
-        if self.point_mask:
-            sample.append(mask.reshape(self.resolution**2, 1)[sample_indices])
         if self.transform:
             sample = self.transform(sample)
-            
-        return points.float(), weights, signal.float(), electrode.float(), mask, target.float()
+        
+        if self.training:
+            rotation_angle = np.random.uniform(0, 2 * np.pi)
+            rotation_matrix = self._random_rotation_matrix(rotation_angle=rotation_angle)
+            points = torch.matmul(points, rotation_matrix.T)
+            electrode[:,:2] = torch.matmul(electrode[:,:2], rotation_matrix.T)
+            mask = self._random_rotation_mask(mask=mask, rotation_angle=rotation_angle)
+        
+        # signal = signal + torch.randn_like(signal)
+        # signal = torch.randn_like(signal)
+
+        return points.float(), weights, signal.float(), electrode, mask, target.float()
 
 def get_impulses(electrodes):
     impulses = []

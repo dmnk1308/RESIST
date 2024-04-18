@@ -5,7 +5,7 @@ defaults:
 - hydra: hydra
 
 inference: False
-inference_path: /home/nibdombe/deep_eit/outputs/2024-04-07/11-12-23/
+inference_path: /home/nibdombe/deep_eit/outputs/2024-04-17/12-23-42
 
 wandb:
   project: deep_eit

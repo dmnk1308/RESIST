@@ -5,6 +5,7 @@ sys.path.append('../..')
 from data_processing.dataset import load_dataset
 from train.training import training
 from train.testing import testing
+from utils.helper import get_all_cases
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import fnmatch
@@ -13,18 +14,6 @@ import wandb
 import argparse
 random.seed(123)
 torch.random.manual_seed(123)
-
-
-def get_all_cases(cfg: DictConfig, base_dir=".."):
-    if cfg.data.cases == 'all':
-        cases = os.listdir(os.path.join(base_dir,cfg.data.raw_data_folder))
-        cases = [case.split('.')[0] for case in cases if fnmatch.fnmatch(case, 'case_TCIA*')]
-        cases_number = [int(case.split('_')[-2]) for case in cases]
-        # cases = [case for case, case_number in zip(cases, cases_number) if case_number < 290]
-        # cases 
-    else:
-        cases = cfg.data.cases
-    return cases
 
 @hydra.main(version_base=None, config_path="cfg", config_name="config")
 def main(cfg: DictConfig, inference=False):
@@ -43,7 +32,9 @@ def main(cfg: DictConfig, inference=False):
                 processed_data_folder=cfg.data.processed_data_folder,
                 dataset_data_folder=cfg.data.dataset_data_folder,
                 no_weights=cfg.data.no_weights, name_prefix=cfg.data.name_prefix,
-                write_dataset=cfg.data.write_dataset, write_npz=cfg.data.write_npz, n_sample_points=cfg.data.n_sample_points)
+                write_dataset=cfg.data.write_dataset, write_npz=cfg.data.write_npz, 
+                overwrite_npz=cfg.data.overwrite_npz, n_sample_points=cfg.learning.training.sample_points,
+                return_electrodes=cfg.data.return_electrodes)
 
     model = hydra.utils.instantiate(cfg.learning.model, mask_resolution=cfg.data.mask_resolution, no_weights=cfg.data.no_weights)
 
@@ -51,7 +42,7 @@ def main(cfg: DictConfig, inference=False):
         model = training(model, train_dataset, val_datset, epochs=cfg.learning.training.epochs, 
                 batch_size_train=cfg.learning.training.batch_size_train, 
                 batch_size_val=cfg.learning.training.batch_size_val, lr=cfg.learning.training.learning_rate, device=cfg.learning.training.device)
-        model.load_state_dict('model.pt')
+        model.load_state_dict(torch.load('model.pt'))
     else:
         model.load_state_dict(torch.load(os.path.join(cfg.inference_path,'model.pt')))
     testing(model, test_dataset, batch_size=cfg.learning.testing.batch_size_test, device=cfg.learning.training.device)

@@ -1,23 +1,25 @@
 model:
-  _target_: model.simple_model.AttentionModel
-  conv_out_channels: 32 
-  conv_in_channels: 1 
-  conv_blocks: 5 
-  conv_features: 64 
+  _target_: model.models.AttentionModelEmbedding
+  # conv_out_channels: 32 
+  # conv_in_channels: 1 
+  # conv_blocks: 5 
+  # conv_features: 64 
   nodes_resistance_network: 512
   resistance_network_blocks: 4
   nodes_signal_network: 512 
   signal_network_blocks: 4
   num_encoding_functions: 10
-  num_attention_blocks: 5
+  num_attention_blocks: 4
   num_electrodes: 16
-
+  num_position_embedding: 4
+  num_level_embdedding: 4
+  num_linear_output_blocks: 3
 training:
   epochs: 300
   batch_size_train: 16
   batch_size_val: 1
   learning_rate: 0.00005
-  sample_points: 5000
+  sample_points: 10000
   device: cuda
 
 testing:

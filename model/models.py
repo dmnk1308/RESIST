@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from model.positional_encoding import positional_encoding
-from model.model_blocks import *
+from deep_eit.model.positional_encoding import positional_encoding
+from deep_eit.model.model_blocks import *
 
 class Model(nn.Module):
     def __init__(self, conv_out_channels=32, conv_in_channels=1, conv_blocks=5, conv_features=512, 
@@ -90,7 +90,7 @@ class BaseModel(nn.Module):
         self.num_encoding_functions = num_encoding_functions
         # process signals and electrode positions naivly together
         self.signal_network = nn.ModuleList()
-        dim_input_signal_network = 16 * 16 + (num_electrodes * 3 * (2*num_encoding_functions))
+        dim_input_signal_network = 16 * 13 + (num_electrodes * 3 * (2*num_encoding_functions))
         for i in range(signal_network_blocks):
             self.signal_network.append(nn.Linear(dim_input_signal_network, nodes_signal_network))
             dim_input_signal_network = nodes_signal_network
@@ -115,7 +115,7 @@ class BaseModel(nn.Module):
         electrodes = positional_encoding(electrodes, num_encoding_functions=self.num_encoding_functions)
         electrodes = electrodes.reshape(electrodes.shape[0], -1)
         electrodes = electrodes.unsqueeze(1).expand(electrodes.shape[0], expand_dim, electrodes.shape[-1])
-        signals = signals.reshape(-1, 1, 16*16)
+        signals = signals.reshape(-1, 1, 16*13)
         signals = signals.expand(-1, expand_dim, -1)
         signals = torch.cat((electrodes, signals), dim=2)
         signals = self.signal_network(signals)
@@ -136,7 +136,7 @@ class AttentionModel(nn.Module):
         self.num_electrodes = num_electrodes
         self.dim_electrodes_pe = 3 * (2*num_encoding_functions)
 
-        self.linear_signals = nn.Linear(16, self.dim_electrodes_pe)
+        self.linear_signals = nn.Linear(13, self.dim_electrodes_pe)
         self.linear_signals_2 = nn.Linear(self.dim_electrodes_pe, self.dim_electrodes_pe)
 
         self.self_attention = nn.ModuleList()
@@ -182,11 +182,10 @@ class AttentionModel(nn.Module):
         xy = xy.reshape(xy.shape[0], n, xy.shape[-1]) # bxnx(2x2xnum_encoding_functions)
         for attention in self.attention:
             xy = attention(signals, xy)
-        for i, linear_out in enumerate(self.linear_out[:-1]):
+        for i, linear_out in enumerate(self.linear_out):
             xy = linear_out(xy)
             # xy = nn.functional.layer_norm(xy, xy.shape[1:])
             xy = nn.functional.relu(xy)
-        xy = self.linear_out[-1](xy)
         return xy
     
 class AttentionModelMask(nn.Module):
@@ -262,13 +261,6 @@ class AttentionModelMask(nn.Module):
         xy = self.linear_sequential(xy)
         return xy
 
-def concatenate_electrode_pairs(electrodes):
-    # concatenate each row with the next row
-    electrodes_new = torch.cat((electrodes[:,:-1], electrodes[:,1:]), dim=2)
-    last_row = torch.cat((electrodes[:,-1], electrodes[:,0]), dim=1)
-    electrodes_new = torch.cat((electrodes_new, last_row.unsqueeze(1)), dim=1)
-    return electrodes_new
-
 class AttentionModelEmbedding(nn.Module):
     def __init__(self, num_encoding_functions=6, num_electrodes=16, nodes_resistance_network=512, 
                  num_attention_blocks= 4, electrode_levels=4, num_level_embedding=32, num_position_embedding=32,
@@ -331,3 +323,133 @@ class AttentionModelEmbedding(nn.Module):
             xy = nn.functional.relu(xy)
         xy = self.linear_out[-1](xy)
         return xy
+    
+
+class AttentionModelCNN(nn.Module):
+    def __init__(self, num_encoding_functions=6, num_electrodes=16, nodes_resistance_network=512, signals_dim=512,
+                 num_attention_blocks=4, num_linear_output_blocks=4, cnn_in_channels=16, cnn_out_channels=32,
+                 prob_dropout=1., training=True, use_cnn=True, **kwargs):
+        super(AttentionModelCNN, self).__init__()
+        self.num_encoding_functions = num_encoding_functions
+        self.num_electrodes = num_electrodes
+        self.dim_electrodes_pe = 13 * 4 * 3 * (2*num_encoding_functions)
+        self.signals_dim = signals_dim
+        self.prob_dropout = prob_dropout
+        self.num_linear_output_blocks = num_linear_output_blocks
+        self.training = training
+        self.use_cnn = use_cnn
+        if not use_cnn:
+            cnn_in_channels = 1
+
+        # PREPROCESSING
+        # self.linear_signals = nn.Linear(13, self.dim_electrodes_pe)
+        # self.linear_signals_2 = nn.Linear(self.dim_electrodes_pe, self.dim_electrodes_pe)
+        self.linear_signals = nn.Linear(self.dim_electrodes_pe, self.signals_dim)
+
+        # SELF ATTENTION
+        self.self_attention = nn.ModuleList()
+        for _ in range(num_attention_blocks):
+            self.self_attention.append(SelfAttentionBlock(in_dim=self.signals_dim, heads=8))
+        self.self_attention = nn.Sequential(*self.self_attention)
+
+        # ATTENTION
+        self.attention = nn.ModuleList()
+        for _ in range(num_attention_blocks):
+            self.attention.append(AttentionBlock(in_dim=self.signals_dim, in_dim_q=2*2*num_encoding_functions, heads=8))
+
+        # LINEAR PROCESSING
+        self.linear_out = nn.ModuleList()
+        for i in range(num_linear_output_blocks):
+            if i==0:
+                self.linear_out.append(nn.Linear(2*2*num_encoding_functions, nodes_resistance_network))
+            elif i==num_linear_output_blocks-1:
+                self.linear_out.append(nn.Linear(nodes_resistance_network, cnn_in_channels))
+            else:
+                self.linear_out.append(nn.Linear(nodes_resistance_network, nodes_resistance_network))
+
+        # CNN
+        if use_cnn:
+            self.cnn = UNetBLock(in_channels=cnn_in_channels, out_channels=cnn_out_channels)
+        
+    def forward(self, signals, electrodes, xy, **kwargs):
+        # signals:      bx16x13
+        # electrodes:   bx16x3
+        # x:            bxnx2
+        b = xy.shape[0]
+        n = xy.shape[1]
+
+        # electrodes-signals self-attention
+        electrodes = combine_electrode_positions(electrodes)
+
+        if self.training:
+            dropout_electrodes = torch.bernoulli(torch.full((electrodes.shape[1],), self.prob_dropout)).bool()
+            num_electrodes = torch.sum(dropout_electrodes)
+            # Number of times to shuffle
+            num_shuffles = electrodes.shape[0]
+            # List to store shuffled tensors
+            shuffled_tensors = []
+            # Loop over the number of shuffles
+            for _ in range(num_shuffles):
+                # Generate random permutation of indices
+                perm_indices = torch.randperm(dropout_electrodes.size(0))
+                # Shuffle the tensor using the random permutation
+                shuffled_tensor = dropout_electrodes[perm_indices]
+                # Append the shuffled tensor to the list
+                shuffled_tensors.append(shuffled_tensor)
+            # Concatenate the permuted tensors along the specified dimension (0 for concatenating along rows)
+            dropout_electrodes = torch.stack(shuffled_tensors, dim=0)
+
+            electrodes = electrodes[dropout_electrodes].reshape(b, num_electrodes, 13, 4, 3)
+            signals = signals[dropout_electrodes].reshape(b, num_electrodes, 13)
+        else: 
+            num_electrodes = self.num_electrodes
+        electrodes = positional_encoding(electrodes, num_encoding_functions=self.num_encoding_functions).reshape(b, num_electrodes, 13, -1)
+
+        # OLD
+        # electrodes = positional_encoding(electrodes, num_encoding_functions=self.num_encoding_functions)
+        # electrodes = electrodes.reshape(electrodes.shape[0], self.num_electrodes, -1) # bx16x(3*2*num_encoding_functions)
+        # electrodes = concatenate_electrode_pairs(electrodes) # bx16x(2*3*2*num_encoding_functions)
+        # signals = self.linear_signals(signals) # bx16x(2*3*2*num_encoding_functions)
+        # signals = nn.functional.relu(signals)
+        # signals = self.linear_signals_2(signals) # bx16x(2*3*2*num_encoding_functions)
+
+        # signals = nn.functional.relu(signals)
+        # signals = nn.functional.layer_norm(signals, signals.shape[1:])
+        signals = electrodes + signals.unsqueeze(-1)
+        signals = self.linear_signals(signals.reshape(b,num_electrodes,-1))
+
+        signals = self.self_attention(signals)
+
+        # point-signals attention
+        xy = positional_encoding(xy, num_encoding_functions=self.num_encoding_functions)
+        xy = xy.reshape(b, n, xy.shape[-1]) # bxnx(2x2xnum_encoding_functions)
+        for attention in self.attention:
+            xy = attention(signals, xy)
+        for i, linear_out in enumerate(self.linear_out):
+            xy = linear_out(xy)
+            # xy = nn.functional.layer_norm(xy, xy.shape[1:])
+            if i != self.num_linear_output_blocks-1:
+                xy = nn.functional.relu(xy)
+        
+        if self.use_cnn:
+            xy = xy.reshape(xy.shape[0], int(np.sqrt(n)), int(np.sqrt(n)), -1).moveaxis(-1, 1)
+            xy = self.cnn(xy)
+        xy = xy.reshape(xy.shape[0], -1, 1)
+        return xy
+    
+def combine_electrode_positions(electrodes):
+    # concatenate each row with the next row
+    new_electrodes = torch.zeros((electrodes.shape[0], 16, 13, 4, 3))
+    for i in range(16):
+        for j in range(13):
+            new_electrodes[:,i,j,0] = electrodes[:,i]
+            new_electrodes[:,i,j,1] = electrodes[:,(i+1)%16]
+            new_electrodes[:,i,j,2] = electrodes[:,(i+2+j)%16]
+            new_electrodes[:,i,j,3] = electrodes[:,(i+3+j)%16]
+    return new_electrodes.to(electrodes.device)
+            
+
+    # electrodes_new = torch.cat((electrodes[:,:-1], electrodes[:,1:]), dim=2)
+    # last_row = torch.cat((electrodes[:,-1], electrodes[:,0]), dim=1)
+    # electrodes_new = torch.cat((electrodes_new, last_row.unsqueeze(1)), dim=1)
+    # return electrodes_new

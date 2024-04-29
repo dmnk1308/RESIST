@@ -9,9 +9,12 @@ def read_mat(path, targets=True):
     mat = scipy.io.loadmat(path)
     key = list(mat.keys())[3]
     data = mat[key]
+    if targets==False:
+        data = data.T
+    else:
+        data = data[::2]
     if isinstance(data, np.ndarray):
         data[np.isnan(data)] = 0
-        data = data.T
         return data
     else:
         print('Check .mat file!')

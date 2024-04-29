@@ -58,6 +58,7 @@ def mesh_to_image(mesh, resolution=[512, 512], z_pos=None, box_size=None, return
     interpolated = points.sample(mesh_clipped)
     array = interpolated['PartId'].reshape(resolution, resolution, 1)
     if return_mask:
-        return np.where(np.asarray(array)>0, 1, 0)
-    return np.asarray(array)
+        return np.where(np.asarray(array)>0, 1, 0)    
+    points = np.asarray(points.points) - np.mean(np.asarray(points.points), axis=0)
+    return np.asarray(array), points
 

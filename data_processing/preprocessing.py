@@ -39,6 +39,8 @@ def load_signals(return_square=True, dir=None):
                     signal_matrix[i, i+2:i+2+number_values_back] = to_allocate[:number_values_back]
                     signal_matrix[i, :number_values_front] = to_allocate[number_values_back:]
                 signal = signal_matrix
+            else:
+                signal = signal.reshape(16,13)
             case_signal.append(signal)
         except:
             print(case_signal_file, 'can not be loaded.')
@@ -93,8 +95,8 @@ def load_mask_target_electrodes(dir, resolution=128, electrode_resolution=512):
     Loads the masks for the given cases.
     '''
     dir = os.path.join(dir)
-    mask, target, coord = get_mask_target_electrodes(dir, resolution=resolution, electrode_resolution=electrode_resolution)
-    return mask, target, coord
+    mask, target, electrodes, points = get_mask_target_electrodes(dir, resolution=resolution, electrode_resolution=electrode_resolution)
+    return mask, target, electrodes, points
 
 def write_data(signals, targets, masks, electrodes, dir=None):
     np.savez_compressed(dir, signals=signals, targets=targets, masks=masks, electrodes=electrodes)

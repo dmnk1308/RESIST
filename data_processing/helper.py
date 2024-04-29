@@ -117,9 +117,10 @@ def get_mask_target_electrodes(dir, resolution=128, electrode_resolution=512, me
         else:
             file_path = os.path.join(file_path, shapes[0])
         msh = pv.read(file_path)
-        xlim = msh.bounds[0:2]
-        ylim = msh.bounds[2:4]
-        zlim = msh.bounds[4:6]
+        bounds = msh.bounds
+        xlim = bounds[0:2]
+        ylim = bounds[2:4]
+        zlim = bounds[4:6]
     else:   
         file_path = os.path.join(dir,'shape/body_only.stl')
         if os.path.exists(file_path):
@@ -138,9 +139,9 @@ def get_mask_target_electrodes(dir, resolution=128, electrode_resolution=512, me
         electrodes_path = os.path.join(dir,'electrodes/electrodes.mat')
         mat = scipy.io.loadmat(electrodes_path)
         key = list(mat.keys())[3]
-        coords = mat[key]
+        electrodes = mat[key]
         # every second point was used
-        coords = coords[::2]
+        electrodes = electrodes[::2]
     else:
         electrodes_path = os.path.join(dir,'electrodes/electrodes.txt')
         if not os.path.exists(electrodes_path):
@@ -148,28 +149,32 @@ def get_mask_target_electrodes(dir, resolution=128, electrode_resolution=512, me
             electrodes_path = os.listdir(folder_path)[0]
             print(f'Electrode file not found. Try to load {electrodes_path} instead.')
             electrodes_path = os.path.join(folder_path, electrodes_path)
-        coords = pd.read_csv(electrodes_path, sep=" ", header=None).values[:-1]
+        electrodes = pd.read_csv(electrodes_path, sep=" ", header=None).values[:-1]
 
     # discretize the mesh
     slices = np.linspace(zlim[0], zlim[1], electrode_resolution)
     xrange = np.linspace(xlim[0], xlim[1], electrode_resolution)
     yrange = np.linspace(ylim[0], ylim[1], electrode_resolution)
 
-    coords = coords.reshape(-1, 16, 3)
-    for c in coords:
-        c[:,0] = np.array([find_nearest(xrange, cx) for cx in c[:,0]])
-        c[:,1] = np.array([find_nearest(yrange, cy) for cy in c[:,1]])
+    electrodes = electrodes.reshape(-1, 16, 3)
+    # for e in electrodes:
+    #     e[:,0] = np.array([find_nearest(xrange, ex) for ex in e[:,0]])
+    #     e[:,1] = np.array([find_nearest(yrange, ey) for ey in e[:,1]])
 
-    z_positions = [np.mean(c[:,2]) for c in coords]
+    z_positions = [np.mean(e[:,2]) for e in electrodes]
     targets = [mesh_to_image(msh, z_pos=z, resolution=resolution) for z in z_positions] 
+    points = [point[1] for point in targets]
+    targets = [target[0] for target in targets]
     masks = [np.where(target>0, 1, 0) for target in targets]
 
     masks = np.stack(masks, axis=0)
     targets = np.stack(targets, axis=0)
-
-    coords[:,:,:2] = coords[:,:,:2] / (electrode_resolution/resolution)
-    # coords = np.stack(coords, axis=0)
-    return masks, targets, coords
+    points = np.stack(points, axis=0)
+    
+    bounds_mean = np.asarray(bounds).reshape(3,2).mean(axis=1).reshape(1, 1, 3)
+    electrodes = electrodes - bounds_mean
+    # electrodes[:,:,:2] = electrodes[:,:,:2] / (electrode_resolution/resolution)
+    return masks, targets, electrodes, points
 
 def change_rho(targets, lung_rhos):
     class_resistancies = np.array([0., 0.3, 0, 0.7, 0.02, 0.025])

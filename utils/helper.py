@@ -3,6 +3,9 @@ import wandb
 from matplotlib.colors import LinearSegmentedColormap
 import os
 import fnmatch
+import random
+import torch
+import numpy as np
 from omegaconf import DictConfig
 
 def log_heatmaps(targets, preds, n_examples=20, n_res=4, cmap='coolwarm'):
@@ -21,7 +24,7 @@ def log_heatmaps(targets, preds, n_examples=20, n_res=4, cmap='coolwarm'):
         sm = plt.cm.ScalarMappable(cmap=cmap)
         sm.set_clim(0, 0.7)
         cbar = fig.colorbar(sm, cax=cbar_ax)        
-        cbar.set_label('Specific Conductivity (S/m)')
+        cbar.set_label('Conductivity (S/m)')
         wandb.log({'Heatmap': fig})
         plt.close(fig)
 
@@ -40,11 +43,18 @@ def make_cmap():
 
 def get_all_cases(cfg: DictConfig, base_dir=".."):
     if cfg.data.cases == 'all':
-        cases = os.listdir(os.path.join(base_dir,cfg.data.processed_data_folder))
+        cases = os.listdir(os.path.join(base_dir,cfg.data.raw_data_folder))
         cases = [case.split('.')[0] for case in cases if fnmatch.fnmatch(case, 'case_TCIA*')]
+        # cases = [case for case in cases if not os.listdir(os.path.join(base_dir,cfg.data.raw_data_folder,case,'shape'))]
         cases_number = [int(case.split('_')[-2]) for case in cases]
         # cases = [case for case, case_number in zip(cases, cases_number) if case_number < 290]
         # cases 
     else:
         cases = cfg.data.cases
     return cases
+
+def set_seeds(seed=123):
+    random.seed(seed)
+    torch.random.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)

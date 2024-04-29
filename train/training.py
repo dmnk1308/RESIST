@@ -21,10 +21,10 @@ def training(model, train_dataset, val_dataset, epochs, batch_size_train, lr, de
     best_val_loss = 100
     cmap = make_cmap()
     for epoch in pbar:
-        epoch_loss_train, model, optimizer = training_step(model, train_dataloader, optimizer, lr, loss, device, epoch)
+        epoch_loss_train, epoch_lung_loss_train, model, optimizer = training_step(model, train_dataloader, optimizer, lr, loss, device, epoch)
         epoch_loss_val, epoch_lung_loss_val = validation_step(model, val_dataloader, loss, device, cmap)
-        pbar.set_description(f"Epoch: {epoch+1}, Train Loss: {epoch_loss_train:.5f}, Val Loss: {epoch_loss_val:.5f}, Val Lung Loss: {epoch_lung_loss_val:.5f}")#, Val Masked MSE: {masked_loss_val:.5f}")
-        wandb.log({"train_loss": epoch_loss_train, "val_loss": epoch_loss_val,"val_lung_loss": epoch_lung_loss_val})#, "masked_mse_val": masked_loss_val})
+        pbar.set_description(f"Epoch: {epoch+1}, Train Loss: {epoch_loss_train:.5f}, Val Loss: {epoch_loss_val:.5f},  Train Lung Loss: {epoch_lung_loss_train:.5f}, Val Lung Loss: {epoch_lung_loss_val:.5f}")#, Val Masked MSE: {masked_loss_val:.5f}")
+        wandb.log({"train_loss": epoch_loss_train, "train_lung_loss": epoch_lung_loss_train, "val_loss": epoch_loss_val,"val_lung_loss": epoch_lung_loss_val})#, "masked_mse_val": masked_loss_val})
         if epoch_loss_val < best_val_loss:
             best_val_loss = epoch_loss_val
             torch.save(model.state_dict(), 'model.pt')
@@ -34,6 +34,7 @@ def training_step(model, dataloader, optimizer, lr, loss, device, epoch):
     model.train()
     model.to(device)
     epoch_loss = 0
+    lung_loss = 0
     for i, (points, weights, signals, electrodes, mask , targets) in enumerate(dataloader):
         optimizer.zero_grad()
         pred = model(signals=signals.to(device), 
@@ -42,14 +43,17 @@ def training_step(model, dataloader, optimizer, lr, loss, device, epoch):
                      xy=points.to(device), 
                      weights=weights.to(device))
         l = loss(pred, targets.to(device))
-        lung_points = (targets < 0.2) * (targets > 0.05)
-        l[lung_points.squeeze()] *= 2
+        lung_points = (targets <= 0.2) * (targets >= 0.05) * (pred.detach().cpu()<=0.25)
+        # l[lung_points.squeeze()] *= 10
         l = l.mean()
         l.backward()
+        if torch.sum(lung_points) > 0:
+            lung_loss += loss(pred.detach().cpu()[lung_points], targets[lung_points]).mean()
         optimizer.step()
         epoch_loss += l.detach().cpu()
     epoch_loss /= (i+1)
-    return epoch_loss, model, optimizer
+    lung_loss /= (i+1)
+    return epoch_loss, lung_loss, model, optimizer
 
 def validation_step(model, dataloader, loss, device, cmap):
     model.eval()
@@ -66,8 +70,9 @@ def validation_step(model, dataloader, loss, device, cmap):
                      masks=mask.float().to(device), 
                      electrodes=electrodes.to(device), 
                      xy=points.to(device), 
-                     weights=weights.to(device))
-        lung_points = (target < 0.2) * (target > 0.05)
+                     weights=weights.to(device),
+                     training=False)
+        lung_points = (target <= 0.2) * (target >= 0.05) * (pred.detach().cpu()<=0.25)
         epoch_loss += loss(pred.detach().cpu(), target).mean()
         if torch.sum(lung_points) > 0:
             lung_loss += loss(pred.detach().cpu()[lung_points], target[lung_points]).mean()

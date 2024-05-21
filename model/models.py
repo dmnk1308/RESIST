@@ -2,8 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from deep_eit.model.positional_encoding import positional_encoding
-from deep_eit.model.model_blocks import *
+from model.positional_encoding import positional_encoding
+from model.model_blocks import *
+from data_processing.helper import combine_electrode_positions
 
 class Model(nn.Module):
     def __init__(self, conv_out_channels=32, conv_in_channels=1, conv_blocks=5, conv_features=512, 
@@ -328,16 +329,23 @@ class AttentionModelEmbedding(nn.Module):
 class AttentionModelCNN(nn.Module):
     def __init__(self, num_encoding_functions=6, num_electrodes=16, nodes_resistance_network=512, signals_dim=512,
                  num_attention_blocks=4, num_linear_output_blocks=4, cnn_in_channels=16, cnn_out_channels=32,
-                 prob_dropout=1., training=True, use_cnn=True, **kwargs):
+                 prob_dropout=1., training=True, use_cnn=True, use_epair_center=True, use_pe_source_only=False, **kwargs):
         super(AttentionModelCNN, self).__init__()
         self.num_encoding_functions = num_encoding_functions
         self.num_electrodes = num_electrodes
-        self.dim_electrodes_pe = 13 * 4 * 3 * (2*num_encoding_functions)
+        if use_epair_center:
+            self.num_pe_electrodes = 2    
+        else:
+            self.num_pe_electrodes = 4    
+        if use_pe_source_only:
+            self.num_pe_electrodes = 1
+        self.dim_electrodes_pe = 13 * self.num_pe_electrodes * 3 * (2*num_encoding_functions)
         self.signals_dim = signals_dim
-        self.prob_dropout = prob_dropout
+        self.prob_dropout = float(prob_dropout)
         self.num_linear_output_blocks = num_linear_output_blocks
         self.training = training
         self.use_cnn = use_cnn
+        self.use_pe_source_only = use_pe_source_only
         if not use_cnn:
             cnn_in_channels = 1
 
@@ -373,17 +381,20 @@ class AttentionModelCNN(nn.Module):
         
     def forward(self, signals, electrodes, xy, **kwargs):
         # signals:      bx16x13
-        # electrodes:   bx16x3
+        # electrodes:   bx16x13xreturn_dimx3
         # x:            bxnx2
         b = xy.shape[0]
         n = xy.shape[1]
 
-        # electrodes-signals self-attention
-        electrodes = combine_electrode_positions(electrodes)
+        if self.use_pe_source_only:
+            electrodes = electrodes[:,:,:,0].reshape(b,16,13,1,3)
 
         if self.training:
-            dropout_electrodes = torch.bernoulli(torch.full((electrodes.shape[1],), self.prob_dropout)).bool()
-            num_electrodes = torch.sum(dropout_electrodes)
+            check_not_zero = False
+            while not check_not_zero:
+                dropout_electrodes = torch.bernoulli(torch.full((electrodes.shape[1],), self.prob_dropout)).bool()
+                num_electrodes = torch.sum(dropout_electrodes)
+                check_not_zero = num_electrodes>0
             # Number of times to shuffle
             num_shuffles = electrodes.shape[0]
             # List to store shuffled tensors
@@ -399,22 +410,12 @@ class AttentionModelCNN(nn.Module):
             # Concatenate the permuted tensors along the specified dimension (0 for concatenating along rows)
             dropout_electrodes = torch.stack(shuffled_tensors, dim=0)
 
-            electrodes = electrodes[dropout_electrodes].reshape(b, num_electrodes, 13, 4, 3)
+            electrodes = electrodes[dropout_electrodes].reshape(b, num_electrodes, 13, self.num_pe_electrodes, 3)
             signals = signals[dropout_electrodes].reshape(b, num_electrodes, 13)
         else: 
             num_electrodes = self.num_electrodes
         electrodes = positional_encoding(electrodes, num_encoding_functions=self.num_encoding_functions).reshape(b, num_electrodes, 13, -1)
 
-        # OLD
-        # electrodes = positional_encoding(electrodes, num_encoding_functions=self.num_encoding_functions)
-        # electrodes = electrodes.reshape(electrodes.shape[0], self.num_electrodes, -1) # bx16x(3*2*num_encoding_functions)
-        # electrodes = concatenate_electrode_pairs(electrodes) # bx16x(2*3*2*num_encoding_functions)
-        # signals = self.linear_signals(signals) # bx16x(2*3*2*num_encoding_functions)
-        # signals = nn.functional.relu(signals)
-        # signals = self.linear_signals_2(signals) # bx16x(2*3*2*num_encoding_functions)
-
-        # signals = nn.functional.relu(signals)
-        # signals = nn.functional.layer_norm(signals, signals.shape[1:])
         signals = electrodes + signals.unsqueeze(-1)
         signals = self.linear_signals(signals.reshape(b,num_electrodes,-1))
 
@@ -437,19 +438,3 @@ class AttentionModelCNN(nn.Module):
         xy = xy.reshape(xy.shape[0], -1, 1)
         return xy
     
-def combine_electrode_positions(electrodes):
-    # concatenate each row with the next row
-    new_electrodes = torch.zeros((electrodes.shape[0], 16, 13, 4, 3))
-    for i in range(16):
-        for j in range(13):
-            new_electrodes[:,i,j,0] = electrodes[:,i]
-            new_electrodes[:,i,j,1] = electrodes[:,(i+1)%16]
-            new_electrodes[:,i,j,2] = electrodes[:,(i+2+j)%16]
-            new_electrodes[:,i,j,3] = electrodes[:,(i+3+j)%16]
-    return new_electrodes.to(electrodes.device)
-            
-
-    # electrodes_new = torch.cat((electrodes[:,:-1], electrodes[:,1:]), dim=2)
-    # last_row = torch.cat((electrodes[:,-1], electrodes[:,0]), dim=1)
-    # electrodes_new = torch.cat((electrodes_new, last_row.unsqueeze(1)), dim=1)
-    # return electrodes_new

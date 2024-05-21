@@ -12,7 +12,6 @@ from utils.helper import log_heatmaps, make_cmap
 def training(model, train_dataset, val_dataset, epochs, batch_size_train, lr, device, batch_size_val=2):
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size_train, shuffle=True)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size_val, shuffle=False)
-    print('Done.')
     optimizer = Adam(model.parameters(), lr=lr)
     pbar = tqdm(range(epochs))
     best_val_loss = 100
@@ -31,11 +30,11 @@ def training_step(model, dataloader, optimizer, lr, device, epoch):
     model.train()
     model.to(device)
     epoch_loss = 0
-    for i, (points, weights, signals, electrodes, mask , targets) in enumerate(dataloader):
+    for i, (_, _, _, _, _ , targets) in enumerate(dataloader):
         optimizer.zero_grad()
         targets = targets.reshape(-1, 1, 512, 512)
         gt_mask = (targets <= 0.2) * (targets >= 0.05)
-        targets[gt_mask] = torch.rand_like(targets[gt_mask])*0.25
+        targets[gt_mask] = targets[gt_mask] + torch.randn_like(targets[gt_mask])*0.01
         pred = model(x=targets.to(device))
         l = iou_loss(pred.flatten(), gt_mask.flatten().float().to(device))
         l.backward()
@@ -48,13 +47,16 @@ def validation_step(model, dataloader, device, cmap):
     model.eval()
     model.to(device)
     epoch_loss = 0
-    for i, (points, weights, signals, electrodes, mask , targets) in enumerate(dataloader):
+    for i, (_, _, _, _, _ , targets) in enumerate(dataloader):
         targets = targets.reshape(-1, 1, 512, 512)
         gt_mask = (targets <= 0.2) * (targets >= 0.05)
-        targets[gt_mask] = torch.rand_like(targets[gt_mask])*0.25
+        targets[gt_mask] = targets[gt_mask] + torch.randn_like(targets[gt_mask])*0.01
         pred = model(x=targets.to(device))
-        l = iou_loss(torch.round(pred.flatten(), decimals=0), gt_mask.flatten().float().to(device))
-        epoch_loss += l.detach().cpu()
+        if gt_mask.sum() > 0:
+            l = iou_loss(pred.flatten().float().round(), gt_mask.flatten().float().to(device))
+            epoch_loss += l.detach().cpu()
+        else:
+            epoch_loss += 0
         if i < 5:
             fig, axes = plt.subplots(1, 3, figsize=(15, 5))
             axes[0].imshow(targets[0].detach().cpu().squeeze(), cmap=cmap)

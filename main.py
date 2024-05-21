@@ -32,7 +32,7 @@ def main(cfg: DictConfig, inference=False):
                 write_dataset=cfg.data.write_dataset, write_npz=cfg.data.write_npz, 
                 overwrite_npz=cfg.data.overwrite_npz, n_sample_points=cfg.learning.training.sample_points,
                 return_electrodes=cfg.data.return_electrodes, apply_rotation=cfg.data.apply_rotation,
-                apply_subsampling=cfg.data.apply_subsampling)
+                apply_subsampling=cfg.data.apply_subsampling, use_epair_center=cfg.data.use_epair_center)
 
     if cfg.segmentation_model:
         run = wandb.init(project='mask_segmentation', 
@@ -43,12 +43,14 @@ def main(cfg: DictConfig, inference=False):
     else:
         run = wandb.init(project='deep_eit', 
                      config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True))
-        model = hydra.utils.instantiate(cfg.learning.model, mask_resolution=cfg.data.mask_resolution, no_weights=cfg.data.no_weights)
+        model = hydra.utils.instantiate(cfg.learning.model, mask_resolution=cfg.data.mask_resolution, no_weights=cfg.data.no_weights, use_epair_center=cfg.data.use_epair_center,
+                                        use_pe_source_only=cfg.data.use_pe_source_only)
 
         if not cfg.inference:
             model = training(model, train_dataset, val_dataset, epochs=cfg.learning.training.epochs, 
                     batch_size_train=cfg.learning.training.batch_size_train, 
-                    batch_size_val=cfg.learning.training.batch_size_val, lr=cfg.learning.training.learning_rate, device=cfg.learning.training.device)
+                    batch_size_val=cfg.learning.training.batch_size_val, lr=cfg.learning.training.learning_rate, 
+                    loss_lung_multiplier=cfg.learning.training.loss_lung_multiplier, device=cfg.learning.training.device)
             model.load_state_dict(torch.load('model.pt'))
         else:
             model.load_state_dict(torch.load(os.path.join(cfg.inference_path,'model.pt')))

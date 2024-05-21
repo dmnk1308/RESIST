@@ -8,7 +8,7 @@ def convert_to_vtk(nas_file_path):
     vtk_file_path = nas_file_path.split('.nas')[0]+'.vtk'
     meshio.write(vtk_file_path, mesh)
 
-def mesh_to_image(mesh, resolution=[512, 512], z_pos=None, box_size=None, return_mask=False):
+def mesh_to_image(mesh, resolution=512, z_pos=None, box_size=None, return_mask=False):
     '''
     Extracts an image from the given mesh along the z_pos.
     '''

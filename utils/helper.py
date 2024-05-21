@@ -43,12 +43,15 @@ def make_cmap():
 
 def get_all_cases(cfg: DictConfig, base_dir=".."):
     if cfg.data.cases == 'all':
-        cases = os.listdir(os.path.join(base_dir,cfg.data.raw_data_folder))
+        cases = os.listdir(os.path.join(base_dir,cfg.data.processed_data_folder))
         cases = [case.split('.')[0] for case in cases if fnmatch.fnmatch(case, 'case_TCIA*')]
+        # cases = [case for case in cases if os.path.exists(os.path.join(base_dir,cfg.data.raw_data_folder,case,'shape','mesh.vtk'))]
         # cases = [case for case in cases if not os.listdir(os.path.join(base_dir,cfg.data.raw_data_folder,case,'shape'))]
         cases_number = [int(case.split('_')[-2]) for case in cases]
-        # cases = [case for case, case_number in zip(cases, cases_number) if case_number < 290]
-        # cases 
+        cases = [case for case, case_number in zip(cases, cases_number) if (case_number!=250)]
+        # idx = np.argsort(np.array(cases_number))
+        # cases = np.array(cases)[idx]
+        # cases = cases.tolist()
     else:
         cases = cfg.data.cases
     return cases
@@ -58,3 +61,6 @@ def set_seeds(seed=123):
     torch.random.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
+
+
+            

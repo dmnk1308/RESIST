@@ -1,6 +1,6 @@
 import torch
 from torch.utils.data import Dataset
-from data_processing.helper import cosine_similarity, change_rho
+from data_processing.helper import cosine_similarity, change_rho, combine_electrode_positions
 import os
 import fnmatch
 from tqdm import tqdm
@@ -66,7 +66,7 @@ def make_npz(cases, raw_data_folder="data/raw", processed_data_folder="data/proc
             print(e)
 
 def make_dataset(cases, processed_data_folder="data/processed", resolution=128, electrode_resolution=512, mask_resolution=512, 
-                 no_weights=False, n_sample_points=10000, return_electrodes=True,
+                 no_weights=False, n_sample_points=10000, return_electrodes=True, use_epair_center=False,
                  path_test_dataset="data/datasets/test_dataset.pt", path_val_dataset="data/datasets/val_dataset.pt", 
                  path_train_dataset="data/datasets/train_dataset.pt"):
     set_seeds(123)
@@ -102,8 +102,10 @@ def make_dataset(cases, processed_data_folder="data/processed", resolution=128, 
     number_test_cases = number_cases - number_training_cases - number_validation_cases
 
     # get point mean and std
-    max_coord = torch.cat(points, axis=0).numpy().max(axis=(0,1))
-    min_coord = torch.cat(points, axis=0).numpy().min(axis=(0,1))
+    # max_coord = torch.cat(points, axis=0).numpy().max(axis=(0,1))
+    # min_coord = torch.cat(points, axis=0).numpy().min(axis=(0,1))
+    max_coord = torch.cat(points, axis=0).numpy()[:,:,:2].max()
+    min_coord = torch.cat(points, axis=0).numpy()[:,:,:2].min()
 
     train_cases = cases[:number_training_cases]
     train_signals = torch.cat(signals[:number_training_cases], axis=0)
@@ -139,17 +141,21 @@ def make_dataset(cases, processed_data_folder="data/processed", resolution=128, 
     train_points = ((train_points - min_coord) / (max_coord - min_coord)) * 2 - 1
     val_points = ((val_points - min_coord) / (max_coord - min_coord)) * 2 - 1
     test_points = ((test_points - min_coord) / (max_coord - min_coord)) * 2 - 1
-    train_electrodes[:,:,:2] = ((train_electrodes[:,:,:2] - min_coord[:2]) / (max_coord[:2] - min_coord[:2])) * 2 - 1
-    val_electrodes[:,:,:2] = ((val_electrodes[:,:,:2] - min_coord[:2]) / (max_coord[:2] - min_coord[:2])) * 2 - 1
-    test_electrodes[:,:,:2] = ((test_electrodes[:,:,:2] - min_coord[:2]) / (max_coord[:2] - min_coord[:2])) * 2 - 1
+    # train_electrodes[:,:,:2] = ((train_electrodes[:,:,:2] - min_coord[:2]) / (max_coord[:2] - min_coord[:2])) * 2 - 1
+    # val_electrodes[:,:,:2] = ((val_electrodes[:,:,:2] - min_coord[:2]) / (max_coord[:2] - min_coord[:2])) * 2 - 1
+    # test_electrodes[:,:,:2] = ((test_electrodes[:,:,:2] - min_coord[:2]) / (max_coord[:2] - min_coord[:2])) * 2 - 1
+    train_electrodes[:,:,:2] = ((train_electrodes[:,:,:2] - min_coord) / (max_coord - min_coord)) * 2 - 1
+    val_electrodes[:,:,:2] = ((val_electrodes[:,:,:2] - min_coord) / (max_coord - min_coord)) * 2 - 1
+    test_electrodes[:,:,:2] = ((test_electrodes[:,:,:2] - min_coord) / (max_coord - min_coord)) * 2 - 1
+
 
     train_dataset = EITData(train_signals, train_targets, train_masks, train_electrodes, train_levels, train_cases, train_points, resolution=resolution, training=True, 
                             no_weights=no_weights, n_sample_points=n_sample_points, train_mean=train_signal_mean, train_std=train_signal_std,
-                            return_electrodes=return_electrodes, min_coords=min_coord, max_coords=max_coord)
+                            return_electrodes=return_electrodes, min_coords=min_coord, max_coords=max_coord, use_epair_center=use_epair_center)
     val_dataset = EITData(val_signals, val_targets, val_masks, val_electrodes, val_levels, val_cases, val_points, resolution=resolution, training=False, no_weights=no_weights, 
-                          train_mean=train_signal_mean, train_std=train_signal_std, return_electrodes=return_electrodes, min_coords=min_coord, max_coords=max_coord)
+                          train_mean=train_signal_mean, train_std=train_signal_std, return_electrodes=return_electrodes, min_coords=min_coord, max_coords=max_coord, use_epair_center=use_epair_center)
     test_dataset = EITData(test_signals, test_targets, test_masks, test_electrodes, test_levels, test_cases, test_points, resolution=resolution, training=False, no_weights=no_weights, 
-                           train_mean=train_signal_mean, train_std=train_signal_std, return_electrodes=return_electrodes, min_coords=min_coord, max_coords=max_coord)
+                           train_mean=train_signal_mean, train_std=train_signal_std, return_electrodes=return_electrodes, min_coords=min_coord, max_coords=max_coord, use_epair_center=use_epair_center)
     print(f'Training set: {len(train_dataset)}, validation set: {len(val_dataset)}, test set: {len(test_dataset)}')
 
     torch.save(train_dataset, path_train_dataset)
@@ -160,7 +166,7 @@ def make_dataset(cases, processed_data_folder="data/processed", resolution=128, 
 def load_dataset(cases, resolution=128, electrode_resolution=512, mask_resolution=512, n_sample_points=10000,
                  base_dir="..", raw_data_folder="data/raw", processed_data_folder="data/processed", dataset_data_folder="data/datasets", 
                  no_weights=False, name_prefix="", write_dataset=False, write_npz=False, overwrite_npz=False, return_electrodes=True,
-                 apply_rotation=False, apply_subsampling=True):
+                 apply_rotation=False, apply_subsampling=True, use_epair_center=False):
     # set up paths
     raw_data_folder = os.path.normpath(os.path.join(base_dir,raw_data_folder))
     processed_data_folder = os.path.normpath(os.path.join(base_dir,processed_data_folder))
@@ -176,26 +182,25 @@ def load_dataset(cases, resolution=128, electrode_resolution=512, mask_resolutio
         make_dataset(cases, processed_data_folder=processed_data_folder, n_sample_points=n_sample_points,
                      resolution=resolution, electrode_resolution=electrode_resolution, mask_resolution=mask_resolution, no_weights=no_weights, 
                      path_test_dataset=path_test_dataset, path_val_dataset=path_val_dataset, path_train_dataset=path_train_dataset,
-                     return_electrodes=return_electrodes)
+                     return_electrodes=return_electrodes, use_epair_center=use_epair_center)
 
     train_dataset = torch.load(path_train_dataset)
     val_dataset = torch.load(path_val_dataset)
     test_dataset = torch.load(path_test_dataset)
     train_dataset.apply_rotation = apply_rotation
     train_dataset.apply_subsampling = apply_subsampling
+    train_dataset.use_epair_center, val_dataset.use_epair_center, test_dataset.use_epair_center = [use_epair_center]*3
     return train_dataset, val_dataset, test_dataset
     
 class EITData(Dataset):
-    def __init__(self, signals, targets, masks, electrodes, levels, cases, points, training=True, resolution=128, n_sample_points=1000,
-                 no_weights=False, train_mean=0, train_std=1, return_electrodes=True, apply_rotation=False, apply_subsampling=True,
-                 min_coords=None, max_coords=None):
+    def __init__(self, signals, targets, masks, electrodes, levels, cases, points, training=False, resolution=128, n_sample_points=1000,
+                 no_weights=False, train_mean=0, train_std=1, return_electrodes=True, apply_rotation=False, apply_subsampling=False,
+                 min_coords=None, use_epair_center=False, max_coords=None):
         self.no_weights = no_weights
         self.resolution = resolution
         self.signals = signals
         self.targets = targets
         self.masks = masks
-        # electrodes[:,:,:2] = (electrodes[:,:,:2] / self.resolution) * 2 - 1
-        self.electrodes = electrodes.float()#[:,:,:2]
         self.points = points
         self.n_sample_points = n_sample_points
         self.training = training
@@ -209,28 +214,35 @@ class EITData(Dataset):
         self.points_min = min_coords
         self.apply_rotation = apply_rotation
         self.apply_subsampling = apply_subsampling
-
-        impulses = []
+        self.use_epair_center = use_epair_center
+        
+        epair_centers = []
         # weights = []
         # points = generate_points(resolution=self.resolution)
-        for electrode in self.electrodes:
-            impulse = get_impulses(electrode[:,:2])
-            impulses.append(impulse)
+        for electrode in electrodes:
+            epair_center = get_epair_center(electrode)
+            epair_centers.append(epair_center)
         #     if no_weights == False:
-        #         w = get_weights(impulse, points)
+        #         w = get_weights(epair_center, points)
         #     else:
         #         w = torch.ones((1,1))
         #     weights.append(w)
-        self.impulses = impulses
-        self.points = points
+        epair_centers = torch.stack(epair_centers, 0)
+
+        electrodes = combine_electrode_positions(electrodes.float(), use_epair_center=False) 
+        epair_centers = combine_electrode_positions(epair_centers, use_epair_center=True)
+        self.epair_center = epair_centers
+        self.electrodes = electrodes
+
         # self.weights = weights
 
     def __len__(self):
         return self.targets.shape[0]
 
     def _random_rotation_matrix(self, rotation_angle):
-        rotation_matrix = torch.tensor([[np.cos(rotation_angle), -np.sin(rotation_angle)],
-                                        [np.sin(rotation_angle), np.cos(rotation_angle)]])
+        rotation_angle = torch.tensor(rotation_angle)
+        rotation_matrix = torch.tensor([[torch.cos(rotation_angle), -torch.sin(rotation_angle)],
+                                        [torch.sin(rotation_angle), torch.cos(rotation_angle)]])
         return rotation_matrix.float()
 
     def _random_rotation_mask(self, mask, rotation_angle):
@@ -245,8 +257,10 @@ class EITData(Dataset):
         target = self.targets[idx]
         signal = self.signals[idx]
         mask = self.masks[idx]
-        electrode = self.electrodes[idx]
-        impulse = self.impulses[idx]
+        if self.use_epair_center:
+            electrode = self.epair_center[idx]
+        else:
+            electrode = self.electrodes[idx]
         points = self.points[idx][:,:2]
 
         if self.training and self.apply_subsampling:
@@ -263,10 +277,8 @@ class EITData(Dataset):
             weights = weights[sample_indices].float()
         points = points[sample_indices].float()
 
-        # electrode = torch.cat((impulse, electrode[:,2].unsqueeze(-1)), 1).float()
-        electrode = electrode.float()
         target = target.reshape(self.resolution**2, 1)[sample_indices]
-        
+
         if self.apply_rotation:
             if self.training and self.return_electrodes:
                 rotation_angle = np.random.uniform(0, 2 * np.pi)
@@ -275,8 +287,11 @@ class EITData(Dataset):
                 # extreme_points = torch.matmul(extreme_points, rotation_matrix.T)
                 # x_max, x_min = extreme_points[:,0].max(), extreme_points[:,0].min()
                 # y_max, y_min = extreme_points[:,1].max(), extreme_points[:,1].min()
-                points = torch.matmul(points, rotation_matrix.T)
-                electrode[:,:2] = torch.matmul(electrode[:,:2], rotation_matrix.T)
+                rot_points = torch.matmul(points.float().clone(), rotation_matrix)
+                # points = torch.matmul(points, rotation_matrix)
+                rot_electrode = electrode.clone()
+                rot_electrode[:,:,:,:2] = torch.matmul(rot_electrode[:,:,:,:2].float(), rotation_matrix)
+                # electrode[:,:,:,:2] = torch.matmul(electrode[:,:,:,:2], rotation_matrix)
                 # rescale
                 # points = ((points - torch.tensor([[x_min, y_min]])) / (torch.tensor([[x_max, y_max]]) - torch.tensor([[x_min, y_min]]))) * 2 - 1
                 # electrode[:,:2] = ((electrode[:,:2] - torch.tensor([[x_min, y_min]])) / (torch.tensor([[x_max, y_max]]) - torch.tensor([[x_min, y_min]]))) * 2 - 1
@@ -284,7 +299,8 @@ class EITData(Dataset):
                 # noise = (torch.rand_like(points) - 0.5)/self.resolution
                 # points = points + noise
                 # mask = self._random_rotation_mask(mask=mask, rotation_angle=rotation_angle)
-            
+                return rot_points, weights, signal.float(), rot_electrode, mask, target.float()
+         
         if not self.return_electrodes:
             electrode = self.levels[idx]
 
@@ -293,35 +309,35 @@ class EITData(Dataset):
 
         return points.float(), weights, signal.float(), electrode, mask, target.float()
 
-def get_impulses(electrodes):
-    impulses = []
+def get_epair_center(electrodes):
+    epair_centers = []
     for i in range(16):
         if i == 15:
             j = 0
         else:
             j = i+1
-        impulse = (electrodes[i] + electrodes[j])/2
-        impulses.append(impulse.float())
-    return torch.stack(impulses, 0)
+        epair_center = (electrodes[i] + electrodes[j])/2
+        epair_centers.append(epair_center.float())
+    return torch.stack(epair_centers, 0)
 
-def get_positional_weights(impulses, points, norm=1):
-    dist = -torch.cdist(impulses.unsqueeze(0), points.unsqueeze(0), p=norm)
+def get_positional_weights(epair_center, points, norm=1):
+    dist = -torch.cdist(epair_center.unsqueeze(0), points.unsqueeze(0), p=norm)
     pos_weight = torch.nn.functional.softmax(dist.T, 1)
     return pos_weight
 
-def get_angle_weights(impulses, points):
+def get_angle_weights(epair_center, points):
     ang_weights = torch.zeros((points.shape[0], 16, 16))
-    for i, ref_impulse in enumerate(impulses):
-        impulses_tmp = impulses - ref_impulse
-        points_tmp = points - ref_impulse
-        cosine_sim = cosine_similarity(impulses_tmp, points_tmp)
+    for i, ref_epair_center in enumerate(epair_center):
+        epair_center_tmp = epair_center - ref_epair_center
+        points_tmp = points - ref_epair_center
+        cosine_sim = cosine_similarity(epair_center_tmp, points_tmp)
         cosine_sim[cosine_sim<0] = 0.
         ang_weights[:, i] = cosine_sim
     return ang_weights
 
-def get_weights(impulses, points, norm=1):
-    angle_weights = get_angle_weights(impulses, points)
-    positional_weights = get_positional_weights(impulses, points)
+def get_weights(epair_center, points, norm=1):
+    angle_weights = get_angle_weights(epair_center, points)
+    positional_weights = get_positional_weights(epair_center, points)
     #weights = torch.nn.functional.softmax(aw + pw, 0)
     positional_weights = positional_weights.tile(1,1,16)
     positional_weights = torch.transpose(positional_weights, 1, 2)
@@ -334,7 +350,7 @@ def generate_points(resolution, no_weights=False):
     yv, xv = torch.meshgrid(x, y, indexing='ij')
     points = torch.stack([xv.flatten(), yv.flatten()], 1)
     # if no_weights == False:
-    #     # angle_weights = get_angle_weights(impulses, points)
-    #     # positional_weights = get_positional_weights(impulses, points)
-    #     weights = get_weights(impulses, points)
+    #     # angle_weights = get_angle_weights(epair_center, points)
+    #     # positional_weights = get_positional_weights(epair_center, points)
+    #     weights = get_weights(epair_center, points)
     return points

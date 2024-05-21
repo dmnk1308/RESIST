@@ -207,3 +207,21 @@ def cosine_similarity(impulses, points):
     euclidean_dist = 1 - (euclidean_dist**2) / 2
     return euclidean_dist.T
 
+def combine_electrode_positions(electrodes, use_epair_center=False):
+    # concatenate each row with the next row
+    if use_epair_center:
+        return_dim = 2
+    else:
+        return_dim = 4
+    new_electrodes = torch.zeros((electrodes.shape[0], 16, 13, return_dim, 3))
+    for i in range(16):
+        for j in range(13):
+            if use_epair_center:
+                new_electrodes[:,i,j,0] = electrodes[:,i]
+                new_electrodes[:,i,j,1] = electrodes[:,(i+2+j)%16]
+            else:                
+                new_electrodes[:,i,j,0] = electrodes[:,i]
+                new_electrodes[:,i,j,1] = electrodes[:,(i+1)%16]
+                new_electrodes[:,i,j,2] = electrodes[:,(i+2+j)%16]
+                new_electrodes[:,i,j,3] = electrodes[:,(i+3+j)%16]
+    return new_electrodes.to(electrodes.device)

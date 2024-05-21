@@ -23,7 +23,7 @@ def testing(model, data, batch_size, device, wandb_log=True):
     targets = []
     if isinstance(data, Dataset):
         dataloader = DataLoader(data, batch_size=1, shuffle=False)
-        for i, (points, weights, signals, electrodes, mask, target) in enumerate(dataloader):
+        for points, weights, signals, electrodes, mask, target in tqdm(dataloader):
             pred = model(signals=signals.to(device), 
                         masks=mask.float().to(device), 
                         electrodes=electrodes.to(device), 

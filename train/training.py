@@ -10,7 +10,7 @@ sys.path.append('../')
 from utils.helper import log_heatmaps, make_cmap
 from train.metrics import masked_mse
 
-def training(model, train_dataset, val_dataset, epochs, batch_size_train, lr, device, batch_size_val=2):
+def training(model, train_dataset, val_dataset, epochs, batch_size_train, lr, device, loss_lung_multiplier=1, batch_size_val=2):
     print('Initializing Dataloader...', end=' ')
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size_train, shuffle=True)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size_val, shuffle=False)
@@ -21,16 +21,16 @@ def training(model, train_dataset, val_dataset, epochs, batch_size_train, lr, de
     best_val_loss = 100
     cmap = make_cmap()
     for epoch in pbar:
-        epoch_loss_train, epoch_lung_loss_train, model, optimizer = training_step(model, train_dataloader, optimizer, lr, loss, device, epoch)
+        epoch_loss_train, epoch_lung_loss_train, model, optimizer = training_step(model, train_dataloader, optimizer, lr, loss, device, epoch, loss_lung_multiplier)
         epoch_loss_val, epoch_lung_loss_val = validation_step(model, val_dataloader, loss, device, cmap)
-        pbar.set_description(f"Epoch: {epoch+1}, Train Loss: {epoch_loss_train:.5f}, Val Loss: {epoch_loss_val:.5f},  Train Lung Loss: {epoch_lung_loss_train:.5f}, Val Lung Loss: {epoch_lung_loss_val:.5f}")#, Val Masked MSE: {masked_loss_val:.5f}")
-        wandb.log({"train_loss": epoch_loss_train, "train_lung_loss": epoch_lung_loss_train, "val_loss": epoch_loss_val,"val_lung_loss": epoch_lung_loss_val})#, "masked_mse_val": masked_loss_val})
-        if epoch_loss_val < best_val_loss:
+        pbar.set_description(f"Epoch: {epoch+1}, Train Loss: {epoch_loss_train:.5f}, Val Loss: {epoch_loss_val:.5f},  Train Lung Loss: {epoch_lung_loss_train:.5f}, Val Lung Loss: {epoch_lung_loss_val:.5f}")
+        wandb.log({"train_loss": epoch_loss_train, "train_lung_loss": epoch_lung_loss_train, "val_loss": epoch_loss_val,"val_lung_loss": epoch_lung_loss_val})
+        if epoch_lung_loss_val < best_val_loss:
             best_val_loss = epoch_loss_val
             torch.save(model.state_dict(), 'model.pt')
     return model
 
-def training_step(model, dataloader, optimizer, lr, loss, device, epoch):
+def training_step(model, dataloader, optimizer, lr, loss, device, epoch, loss_lung_multiplier):
     model.train()
     model.to(device)
     epoch_loss = 0
@@ -43,8 +43,8 @@ def training_step(model, dataloader, optimizer, lr, loss, device, epoch):
                      xy=points.to(device), 
                      weights=weights.to(device))
         l = loss(pred, targets.to(device))
-        lung_points = (targets <= 0.2) * (targets >= 0.05) * (pred.detach().cpu()<=0.25)
-        # l[lung_points.squeeze()] *= 10
+        lung_points = (targets <= 0.2) * (targets >= 0.05) #* (pred.detach().cpu()<=0.25)
+        l[lung_points.squeeze()] *= loss_lung_multiplier
         l = l.mean()
         l.backward()
         if torch.sum(lung_points) > 0:

@@ -95,7 +95,8 @@ def reduce_mask(mask):
                 mask[j, i] = 0
     return mask
 
-def get_mask_target_electrodes(dir, resolution=128, electrode_resolution=512, mesh_from_nas=True):
+def get_mask_target_electrodes(dir, resolution=128, electrode_resolution=512, mesh_from_nas=True, all_signals=False,
+                                points_3d=False, point_levels_3d=8, point_range_3d=0.05):
     ''' 
     Returns the mask of the body shape and the coordinates of the electrodes.
     '''
@@ -162,26 +163,28 @@ def get_mask_target_electrodes(dir, resolution=128, electrode_resolution=512, me
     #     e[:,1] = np.array([find_nearest(yrange, ey) for ey in e[:,1]])
 
     z_positions = [np.mean(e[:,2]) for e in electrodes]
-    targets = [mesh_to_image(msh, z_pos=z, resolution=resolution) for z in z_positions] 
-    points = [point[1] for point in targets]
-    targets = [target[0] for target in targets]
-    masks = [np.where(target>0, 1, 0) for target in targets]
-
-    masks = np.stack(masks, axis=0)
+    if all_signals:
+        z_positions = create_equal_distant_array(n=point_levels_3d, value1=z_positions[0], value2=z_positions[1], value3=z_positions[2], value4=z_positions[3])
+    mesh_arrays = [mesh_to_image(msh, z_pos=z, resolution=resolution) for z in z_positions] 
+    points = [point[1] for point in mesh_arrays] # shape: (point_levels_3d * 512 * 512, 3)
+    center_vector = mesh_arrays[0][2]
+    # use mean z_position as center point along z-axis
+    center_vector[2] = np.mean(z_positions)
+    targets = [target[0] for target in mesh_arrays]
     targets = np.stack(targets, axis=0)
-    points = np.stack(points, axis=0)
-    
-    bounds_mean = np.asarray(bounds).reshape(3,2).mean(axis=1).reshape(1, 1, 3)
-    electrodes = electrodes - bounds_mean
+    points = np.stack(points, axis=0) - center_vector
+    electrodes = electrodes - center_vector
+    # bounds_mean = np.asarray(bounds).reshape(3,2).mean(axis=1).reshape(1, 1, 3)
+    # electrodes = electrodes - bounds_mean
     # electrodes[:,:,:2] = electrodes[:,:,:2] / (electrode_resolution/resolution)
-    return masks, targets, electrodes, points
+    return targets, electrodes, points
 
 def change_rho(targets, lung_rhos):
     class_resistancies = np.array([0., 0.3, 0, 0.7, 0.02, 0.025])
     targets_rho = []
     for i,lung_rho in enumerate(lung_rhos):
         class_resistancies[2] = 1/float(lung_rho)
-        targets_rho.append(class_resistancies[targets[i]])
+        targets_rho.append(class_resistancies[targets])
     targets_rho = np.stack(targets_rho, axis=0)
     return targets_rho
 
@@ -213,7 +216,7 @@ def combine_electrode_positions(electrodes, use_epair_center=False):
         return_dim = 2
     else:
         return_dim = 4
-    new_electrodes = torch.zeros((electrodes.shape[0], 16, 13, return_dim, 3))
+    new_electrodes = np.zeros((electrodes.shape[0], 16, 13, return_dim, 3))
     for i in range(16):
         for j in range(13):
             if use_epair_center:
@@ -224,4 +227,27 @@ def combine_electrode_positions(electrodes, use_epair_center=False):
                 new_electrodes[:,i,j,1] = electrodes[:,(i+1)%16]
                 new_electrodes[:,i,j,2] = electrodes[:,(i+2+j)%16]
                 new_electrodes[:,i,j,3] = electrodes[:,(i+3+j)%16]
-    return new_electrodes.to(electrodes.device)
+    return new_electrodes
+
+
+def create_equal_distant_array(n, value1, value2, value3, value4):
+    '''
+    Create an equal distant array between value1 and value2 and value3 and value4 and adds an additional point at the beginning and end.
+    '''
+    if n < 6:
+        raise ValueError("n must be at least 5 to place values correctly")
+    if n % 3 != 0:
+        raise ValueError("n must be divisible by 3 to place values correctly")
+
+    if value1 <= value2 or value2 <= value3 or value1 <= value3:
+        raise ValueError("Check the z-coordinates, as the values are not decreasing in their values")
+
+    # Make an equal distant array between value1 and value2 and value2 and value3
+    n_create = n // 3 # we would have to reduce the number by 2 and then distribute the number over 3 sub arrays (v1-v2, v2-v3, v3-v4), we use v2, v3 as start point so no reduction necessary
+    array1 = np.linspace(value1, value2, int(n_create))
+    array2 = np.linspace(value2, value3, int(n_create))
+    array3 = np.linspace(value3, value4, int(n_create))
+    dist_begin = np.abs(array1[1] - array1[0])
+    dist_end = np.abs(array3[1] - array3[0])
+    array = np.concatenate((np.array([value1 + dist_begin]), array1, array2[1:], array3[1:], np.array([value4 - dist_end])))
+    return array

@@ -1,25 +1,25 @@
-program: ../main.py
+program: deep_eit/main.py
 name: sweep
 method: grid
 metric:
   goal: minimize
-  name: val_loss
+  name: val_lung_loss
 parameters:
   learning.model.num_attention_blocks: 
-    values: [4, 6]
+    values: [2, 4, 6]
   learning.model.num_encoding_functions: 
-    values: [4, 10]
-  learning.training.signals_dim:
+    values: [6, 10, 14]
+  learning.model.signals_dim:
     values: [64, 512]
-  learning.model.use_cnn:
-    values: [True, False]
   learning.training.epochs:
     values: [40]
   learning.model.prob_dropout:
-    values: [0.5, 0.7, 1.]
+    values: [0.5, 1.0]
 
 command:
   - ${env}
   - python
   - ${program}
   - ${args_no_hyphens}
+
+# wandb sweep --project deep_eit deep_eit/cfg/sweep.yaml

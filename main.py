@@ -3,6 +3,7 @@ import sys
 import torch
 sys.path.append('../..')
 from data_processing.dataset import load_dataset
+from data_processing.dataset_3d import load_dataset_3d
 from train.training import training
 from train.testing import testing
 from utils.helper import get_all_cases, set_seeds
@@ -19,20 +20,39 @@ def main(cfg: DictConfig, inference=False):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     base_dir = os.path.dirname(script_dir)
 
-    cases = get_all_cases(cfg, base_dir=script_dir)
-    train_dataset, val_dataset, test_dataset = load_dataset(cases,
-                resolution=cfg.data.resolution, 
-                electrode_resolution=cfg.data.electrode_resolution,
-                mask_resolution=cfg.data.mask_resolution, 
-                base_dir = script_dir,
-                raw_data_folder=cfg.data.raw_data_folder, 
-                processed_data_folder=cfg.data.processed_data_folder,
-                dataset_data_folder=cfg.data.dataset_data_folder,
-                no_weights=cfg.data.no_weights, name_prefix=cfg.data.name_prefix,
-                write_dataset=cfg.data.write_dataset, write_npz=cfg.data.write_npz, 
-                overwrite_npz=cfg.data.overwrite_npz, n_sample_points=cfg.learning.training.sample_points,
-                return_electrodes=cfg.data.return_electrodes, apply_rotation=cfg.data.apply_rotation,
-                apply_subsampling=cfg.data.apply_subsampling, use_epair_center=cfg.data.use_epair_center)
+    cases = get_all_cases(cfg, base_dir=script_dir, use_raw=True)
+    if cfg.data.points_3d:
+        train_dataset, val_dataset, test_dataset = load_dataset_3d(cases,
+                    resolution=cfg.data.resolution, 
+                    electrode_resolution=cfg.data.electrode_resolution,
+                    mask_resolution=cfg.data.mask_resolution, 
+                    base_dir = script_dir,
+                    raw_data_folder=cfg.data.raw_data_folder, 
+                    processed_data_folder=cfg.data.processed_data_folder,
+                    dataset_data_folder=cfg.data.dataset_data_folder,
+                    no_weights=cfg.data.no_weights, name_prefix=cfg.data.name_prefix,
+                    write_dataset=cfg.data.write_dataset, write_npz=cfg.data.write_npz, 
+                    overwrite_npz=cfg.data.overwrite_npz, n_sample_points=cfg.learning.training.sample_points,
+                    return_electrodes=cfg.data.return_electrodes, apply_rotation=cfg.data.apply_rotation,
+                    apply_subsampling=cfg.data.apply_subsampling, use_epair_center=cfg.data.use_epair_center,
+                    points_3d=cfg.data.points_3d, point_levels_3d=cfg.data.point_levels_3d, point_range_3d=cfg.data.point_range_3d,
+                    multi_process=cfg.data.multi_process, num_workers=cfg.data.num_workers, all_signals=cfg.data.all_signals
+                    )
+    else:
+        train_dataset, val_dataset, test_dataset = load_dataset(cases,
+                    resolution=cfg.data.resolution, 
+                    electrode_resolution=cfg.data.electrode_resolution,
+                    mask_resolution=cfg.data.mask_resolution, 
+                    base_dir = script_dir,
+                    raw_data_folder=cfg.data.raw_data_folder, 
+                    processed_data_folder=cfg.data.processed_data_folder,
+                    dataset_data_folder=cfg.data.dataset_data_folder,
+                    no_weights=cfg.data.no_weights, name_prefix=cfg.data.name_prefix,
+                    write_dataset=cfg.data.write_dataset, write_npz=cfg.data.write_npz, 
+                    overwrite_npz=cfg.data.overwrite_npz, n_sample_points=cfg.learning.training.sample_points,
+                    return_electrodes=cfg.data.return_electrodes, apply_rotation=cfg.data.apply_rotation,
+                    apply_subsampling=cfg.data.apply_subsampling, use_epair_center=cfg.data.use_epair_center,
+                    )
 
     if cfg.segmentation_model:
         run = wandb.init(project='mask_segmentation', 
@@ -50,7 +70,8 @@ def main(cfg: DictConfig, inference=False):
             model = training(model, train_dataset, val_dataset, epochs=cfg.learning.training.epochs, 
                     batch_size_train=cfg.learning.training.batch_size_train, 
                     batch_size_val=cfg.learning.training.batch_size_val, lr=cfg.learning.training.learning_rate, 
-                    loss_lung_multiplier=cfg.learning.training.loss_lung_multiplier, device=cfg.learning.training.device)
+                    loss_lung_multiplier=cfg.learning.training.loss_lung_multiplier, device=cfg.learning.training.device,
+                    point_levels_3d=cfg.data.point_levels_3d)
             model.load_state_dict(torch.load('model.pt'))
         else:
             model.load_state_dict(torch.load(os.path.join(cfg.inference_path,'model.pt')))

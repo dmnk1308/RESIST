@@ -17,19 +17,23 @@ def mesh_to_image(mesh, resolution=512, z_pos=None, box_size=None, return_mask=F
             print('Convert .nas file to vtk', end='...')
             convert_to_vtk(mesh)
             mesh = mesh.split('.')[0]+'.vtk'
-            print('- Complete.')
+            print(' Complete.')
         elif mesh.split('.')[1]=='vtk':
             print('Loading .vtk file', end='...')
             mesh = pv.read(mesh)
-            print('- Complete.')
+            print(' Complete.')
         else:
             raise TypeError('File format not supported.')
     else:
         None
+
     x_min, x_max = mesh.bounds[:2]
     y_min, y_max = mesh.bounds[2:4]
     z_min, z_max = mesh.bounds[4:6]
+    x_mean = np.mean(np.array([x_max,x_min]))
+    y_mean = np.mean(np.array([y_max,y_min]))
     z_mean = np.mean(np.array([z_max,z_min]))
+    center_vector = np.array([x_mean, y_mean, z_mean])
 
     if z_pos==None:
         z_pos = z_mean
@@ -38,11 +42,16 @@ def mesh_to_image(mesh, resolution=512, z_pos=None, box_size=None, return_mask=F
         z_length = z_max-z_min
         box_size = 0.005*z_length
         # print(f'box_size set to {box_size}.')
+    # if box_size < point_range_3d:
+    #     Warning(f'box_size is too small. box_size set to 1.5*{point_range_3d}.')
+    #     box_size = 1.5*point_range_3d
     # rename cell data
     celldata_name = mesh.cell_data.keys()[0]
     mesh.cell_data['PartId'] = mesh.cell_data[celldata_name]
     # clip mesh to reduce sample times
-    mesh_clipped = mesh.clip_box([x_min, x_max, y_min, y_max, z_pos-box_size, z_pos+box_size], invert=False)
+    z_min = z_pos-box_size
+    z_max = z_pos+box_size
+    mesh_clipped = mesh.clip_box([x_min, x_max, y_min, y_max, z_min, z_max], invert=False)
 
     # define coordinates for slice
     x = np.linspace(x_min, x_max, resolution)
@@ -56,9 +65,8 @@ def mesh_to_image(mesh, resolution=512, z_pos=None, box_size=None, return_mask=F
 
     # sample values for slice from clipped mesh 
     interpolated = points.sample(mesh_clipped)
-    array = interpolated['PartId'].reshape(resolution, resolution, 1)
+    label = interpolated['PartId'].reshape(resolution, resolution, 1)
     if return_mask:
-        return np.where(np.asarray(array)>0, 1, 0)    
-    points = np.asarray(points.points) - np.mean(np.asarray(points.points), axis=0)
-    return np.asarray(array), points
-
+        return np.where(np.asarray(label)>0, 1, 0)    
+    points = np.asarray(points.points) #- np.mean(np.asarray(points.points), axis=0)
+    return np.asarray(label), points, center_vector

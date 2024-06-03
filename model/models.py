@@ -329,23 +329,17 @@ class AttentionModelEmbedding(nn.Module):
 class AttentionModelCNN(nn.Module):
     def __init__(self, num_encoding_functions=6, num_electrodes=16, nodes_resistance_network=512, signals_dim=512,
                  num_attention_blocks=4, num_linear_output_blocks=4, cnn_in_channels=16, cnn_out_channels=32,
-                 prob_dropout=1., training=True, use_cnn=True, use_epair_center=True, use_pe_source_only=False, **kwargs):
+                 prob_dropout=1., training=True, use_cnn=True, **kwargs):
         super(AttentionModelCNN, self).__init__()
         self.num_encoding_functions = num_encoding_functions
         self.num_electrodes = num_electrodes
-        if use_epair_center:
-            self.num_pe_electrodes = 2    
-        else:
-            self.num_pe_electrodes = 4    
-        if use_pe_source_only:
-            self.num_pe_electrodes = 1
+        self.num_pe_electrodes = 4    
         self.dim_electrodes_pe = 13 * self.num_pe_electrodes * 3 * (2*num_encoding_functions)
         self.signals_dim = signals_dim
         self.prob_dropout = float(prob_dropout)
         self.num_linear_output_blocks = num_linear_output_blocks
         self.training = training
         self.use_cnn = use_cnn
-        self.use_pe_source_only = use_pe_source_only
         if not use_cnn:
             cnn_in_channels = 1
 
@@ -363,13 +357,13 @@ class AttentionModelCNN(nn.Module):
         # ATTENTION
         self.attention = nn.ModuleList()
         for _ in range(num_attention_blocks):
-            self.attention.append(AttentionBlock(in_dim=self.signals_dim, in_dim_q=2*2*num_encoding_functions, heads=8))
+            self.attention.append(AttentionBlock(in_dim=self.signals_dim, in_dim_q=3*2*num_encoding_functions, heads=8))
 
         # LINEAR PROCESSING
         self.linear_out = nn.ModuleList()
         for i in range(num_linear_output_blocks):
             if i==0:
-                self.linear_out.append(nn.Linear(2*2*num_encoding_functions, nodes_resistance_network))
+                self.linear_out.append(nn.Linear(3*2*num_encoding_functions, nodes_resistance_network))
             elif i==num_linear_output_blocks-1:
                 self.linear_out.append(nn.Linear(nodes_resistance_network, cnn_in_channels))
             else:
@@ -380,19 +374,18 @@ class AttentionModelCNN(nn.Module):
             self.cnn = UNetBLock(in_channels=cnn_in_channels, out_channels=cnn_out_channels)
         
     def forward(self, signals, electrodes, xy, **kwargs):
-        # signals:      bx16x13
-        # electrodes:   bx16x13xreturn_dimx3
+        # signals:      bx4x16x13
+        # electrodes:   bx4x16x13x4x3
         # x:            bxnx2
         b = xy.shape[0]
         n = xy.shape[1]
-
-        if self.use_pe_source_only:
-            electrodes = electrodes[:,:,:,0].reshape(b,16,13,1,3)
-
+        num_electrodes = electrodes.shape[2]*electrodes.shape[1]
+        electrodes = electrodes.reshape(b, num_electrodes, 13, self.num_pe_electrodes, 3).float()
+        signals = signals.reshape(b, num_electrodes, 13).float()
         if self.training:
             check_not_zero = False
             while not check_not_zero:
-                dropout_electrodes = torch.bernoulli(torch.full((electrodes.shape[1],), self.prob_dropout)).bool()
+                dropout_electrodes = torch.bernoulli(torch.full((num_electrodes,), self.prob_dropout)).bool()
                 num_electrodes = torch.sum(dropout_electrodes)
                 check_not_zero = num_electrodes>0
             # Number of times to shuffle
@@ -409,11 +402,8 @@ class AttentionModelCNN(nn.Module):
                 shuffled_tensors.append(shuffled_tensor)
             # Concatenate the permuted tensors along the specified dimension (0 for concatenating along rows)
             dropout_electrodes = torch.stack(shuffled_tensors, dim=0)
-
             electrodes = electrodes[dropout_electrodes].reshape(b, num_electrodes, 13, self.num_pe_electrodes, 3)
             signals = signals[dropout_electrodes].reshape(b, num_electrodes, 13)
-        else: 
-            num_electrodes = self.num_electrodes
         electrodes = positional_encoding(electrodes, num_encoding_functions=self.num_encoding_functions).reshape(b, num_electrodes, 13, -1)
 
         signals = electrodes + signals.unsqueeze(-1)

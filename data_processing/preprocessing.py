@@ -90,12 +90,13 @@ def load_tomograms(dir=None):
 #     case_targets = np.stack(case_targets,0)
 #     return case_targets
 
-def load_mask_target_electrodes(dir, resolution=128, electrode_resolution=512):
+def load_mask_target_electrodes(dir, resolution=128, electrode_resolution=512, points_3d=False, point_levels_3d=8, point_range_3d=0.05):
     ''' 
     Loads the masks for the given cases.
     '''
     dir = os.path.join(dir)
-    mask, target, electrodes, points = get_mask_target_electrodes(dir, resolution=resolution, electrode_resolution=electrode_resolution)
+    mask, target, electrodes, points = get_mask_target_electrodes(dir, resolution=resolution, electrode_resolution=electrode_resolution,
+                                                                   points_3d=points_3d, point_levels_3d=point_levels_3d, point_range_3d=point_range_3d)
     return mask, target, electrodes, points
 
 def write_data(signals, targets, masks, electrodes, dir=None):

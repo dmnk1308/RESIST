@@ -8,14 +8,14 @@ import torch
 import numpy as np
 from omegaconf import DictConfig
 
-def log_heatmaps(targets, preds, n_examples=20, n_res=4, cmap='coolwarm'):
+def log_heatmaps(targets, preds, n_examples=20, n_levels=4, cmap='coolwarm', resolution=512):
     # log qualitative results
-    targets_case = targets.detach().cpu().numpy().squeeze().reshape(-1, n_res, 512, 512)
-    preds_case = preds.detach().cpu().numpy().squeeze().reshape(-1, n_res, 512, 512)
+    targets_case = targets.detach().cpu().numpy().squeeze().reshape(-1, n_levels, resolution, resolution)
+    preds_case = preds.detach().cpu().numpy().squeeze().reshape(-1, n_levels, resolution, resolution)
     for i in range(n_examples):
-        fig, axes = plt.subplots(n_res, 2, figsize=(10, 16))
+        fig, axes = plt.subplots(n_levels, 2, figsize=(10, 16))
         cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])  # [left, bottom, width, height]
-        for resistancy in range(n_res):
+        for resistancy in range(n_levels):
             axes[resistancy,0].imshow(targets_case[i,resistancy], vmin=0, vmax=0.7, cmap=cmap)
             axes[resistancy,0].axis('off')
             axes[resistancy,1].imshow(preds_case[i,resistancy], vmin=0, vmax=0.7, cmap=cmap)
@@ -41,14 +41,20 @@ def make_cmap():
     cmap = LinearSegmentedColormap.from_list('custom_colormap', list(zip(positions, colors)))
     return cmap
 
-def get_all_cases(cfg: DictConfig, base_dir=".."):
+def get_all_cases(cfg: DictConfig, base_dir="..", use_raw=False):
     if cfg.data.cases == 'all':
-        cases = os.listdir(os.path.join(base_dir,cfg.data.processed_data_folder))
+        if use_raw:
+            cases = os.listdir(os.path.join(base_dir,cfg.data.raw_data_folder))
+        else:
+            cases = os.listdir(os.path.join(base_dir,cfg.data.processed_data_folder))
         cases = [case.split('.')[0] for case in cases if fnmatch.fnmatch(case, 'case_TCIA*')]
         # cases = [case for case in cases if os.path.exists(os.path.join(base_dir,cfg.data.raw_data_folder,case,'shape','mesh.vtk'))]
         # cases = [case for case in cases if not os.listdir(os.path.join(base_dir,cfg.data.raw_data_folder,case,'shape'))]
         cases_number = [int(case.split('_')[-2]) for case in cases]
-        cases = [case for case, case_number in zip(cases, cases_number) if (case_number!=250)]
+        # cases = [case for case, case_number in zip(cases, cases_number) if (case_number!=250)]
+        cases_number = [case_number for case_number in cases_number if case_number!=250]
+        cases_number.sort()
+        cases = ['case_TCIA_'+str(case_number)+'_0' for case_number in cases_number]
         # idx = np.argsort(np.array(cases_number))
         # cases = np.array(cases)[idx]
         # cases = cases.tolist()

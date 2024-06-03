@@ -14,7 +14,7 @@ import sys
 sys.path.append('../')
 from utils.helper import log_heatmaps, make_cmap
 
-def testing(model, data, batch_size, device, wandb_log=True):
+def testing(model, data, batch_size, device, wandb_log=True, n_levels=6):
     loss = nn.MSELoss(reduction='none')
     model.eval()
     model.to(device)
@@ -23,6 +23,7 @@ def testing(model, data, batch_size, device, wandb_log=True):
     targets = []
     if isinstance(data, Dataset):
         dataloader = DataLoader(data, batch_size=1, shuffle=False)
+        n_levels = data.point_levels_3d
         for points, weights, signals, electrodes, mask, target in tqdm(dataloader):
             pred = model(signals=signals.to(device), 
                         masks=mask.float().to(device), 
@@ -57,7 +58,7 @@ def testing(model, data, batch_size, device, wandb_log=True):
         wandb.log({"test_loss": test_loss})    
         wandb.log({"test_lung_loss": test_lung_loss})
         # log qualitative results
-        log_heatmaps(targets, preds, cmap=cmap)
+        log_heatmaps(targets, preds, n_levels=n_levels, cmap=cmap)
     else:
         print('Test Loss: ', test_loss)
         print('Test Lung Loss: ', test_lung_loss)

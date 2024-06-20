@@ -1,2 +1,2 @@
-job:
-  chdir: True
+run:
+  dir: /home/nibdombe/deep_eit/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}

@@ -2,8 +2,11 @@ from vedo import *
 import numpy as np
 import os
 import fnmatch
-
-from data_processing.helper import rescale_img, get_mask_target_electrodes
+import pandas as pd
+import pyvista as pv
+import scipy
+from data_processing.helper import create_equal_distant_array, pad_to_shape_centered
+from data_processing.mesh_to_array import mesh_to_image, convert_to_vtk, mesh_to_voxels
 from data_processing.obj2py import read_egt, read_get
 
 def load_signals(return_square=True, dir=None):
@@ -12,6 +15,8 @@ def load_signals(return_square=True, dir=None):
     '''    
     signal_dir  = os.path.join(dir,'signals')
     case_signal = []
+    rhos = []
+    level = []
     case_signals_files = os.listdir(signal_dir)
     case_signals_files = [f for f in case_signals_files if fnmatch.fnmatch(f, 'level_*_*.*')]
     def custom_sort(s):
@@ -41,12 +46,16 @@ def load_signals(return_square=True, dir=None):
                 signal = signal_matrix
             else:
                 signal = signal.reshape(16,13)
+            rhos.append(int(case_signal_file.split('_')[2].split('.')[0]))
+            level.append(int(case_signal_file.split('_')[1]))
             case_signal.append(signal)
         except:
             print(case_signal_file, 'can not be loaded.')
             
     case_signal = np.stack(case_signal,0)
-    return case_signal
+    rhos = np.array(rhos)
+    level = np.array(level)
+    return case_signal, rhos, level
 
 def load_tomograms(dir=None):
     ''' 
@@ -65,40 +74,95 @@ def load_tomograms(dir=None):
     case_tomograms = np.stack(case_tomograms,0)
     return case_tomograms
 
-# DB: Used for loading targets from .mat data - load_mask_target_electrodes() used now to load all from .nas/.vtk file aligned
-# def load_targets(resolution=128, dir=None):
-#     ''' 
-#     Loads the targets for the given directory.
-#     '''
-#     targets_dir = os.path.join(dir,'targets')
-#     case_targets = []
-#     case_targets_files = os.listdir(targets_dir)
-#     case_targets_files = [file for file in case_targets_files if file.endswith('.mat') & fnmatch.fnmatch(file, 'level_*_*.mat')]
-#     case_targets_files.sort()
-#     for case_targets_file in case_targets_files:
-#         try:
-#             mat = scipy.io.loadmat(targets_dir + '/' + case_targets_file)
-#             key = list(mat.keys())[3]
-#             target = mat[key]
-#             target[np.isnan(target)] = 0
-#             target = target.T
-#             target = rescale_img(target)
-#             target = cv2.resize(target, (resolution, resolution), interpolation=cv2.INTER_LINEAR)
-#             case_targets.append(target)
-#         except:
-#             print(case_targets_file, 'can not be loaded.')
-#     case_targets = np.stack(case_targets,0)
-#     return case_targets
-
-def load_mask_target_electrodes(dir, resolution=128, electrode_resolution=512, points_3d=False, point_levels_3d=8, point_range_3d=0.05):
+def load_targets_electrodes_points(dir, resolution=128, mesh_from_nas=True, all_signals=False, point_levels_3d=8):
     ''' 
-    Loads the masks for the given cases.
+    Returns the mask of the body shape and the coordinates of the electrodes.
     '''
-    dir = os.path.join(dir)
-    mask, target, electrodes, points = get_mask_target_electrodes(dir, resolution=resolution, electrode_resolution=electrode_resolution,
-                                                                   points_3d=points_3d, point_levels_3d=point_levels_3d, point_range_3d=point_range_3d)
-    return mask, target, electrodes, points
+    # load raw stl file 
+    if mesh_from_nas:
+        file_path = os.path.join(dir, 'shape')
+        shapes = os.listdir(file_path)
+        shapes = [shape for shape in shapes if fnmatch.fnmatch(shape, '*.vtk')]
+        if len(shapes)==0:
+            print(f'No .vtk file found in {dir}. Search .nas file', end='...')            
+            shapes = os.listdir(file_path)
+            shapes = [shape for shape in shapes if fnmatch.fnmatch(shape, '*.nas')]
+            if len(shapes)==0:
+                raise ValueError(f'No shape file found in {file_path}')
+            file_path = os.path.join(file_path, shapes[0])
+            convert_to_vtk(file_path)
+            file_path = file_path.split('.nas')[0]+'.vtk'
+        else:
+            file_path = os.path.join(file_path, shapes[0])
+        msh = pv.read(file_path)
+    else:   
+        file_path = os.path.join(dir,'shape/body_only.stl')
+        if os.path.exists(file_path):
+            msh = Mesh(file_path)
+        else:
+            file_path = os.path.join(dir,'shape/background.stl')
+            msh = Mesh(file_path)
 
-def write_data(signals, targets, masks, electrodes, dir=None):
-    np.savez_compressed(dir, signals=signals, targets=targets, masks=masks, electrodes=electrodes)
+    # load raw electrode coordinates   
+    electrodes_from_mat = os.path.exists(os.path.join(dir,'electrodes/electrodes.mat'))
 
+    if electrodes_from_mat:
+        electrodes_path = os.path.join(dir,'electrodes/electrodes.mat')
+        mat = scipy.io.loadmat(electrodes_path)
+        key = list(mat.keys())[3]
+        electrodes = mat[key]
+        # every second point was used
+        electrodes = electrodes[::2]
+    else:
+        electrodes_path = os.path.join(dir,'electrodes/electrodes.txt')
+        if not os.path.exists(electrodes_path):
+            folder_path = os.path.split(electrodes_path)[0]
+            electrodes_path = os.listdir(folder_path)[0]
+            print(f'Electrode file not found. Try to load {electrodes_path} instead.')
+            electrodes_path = os.path.join(folder_path, electrodes_path)
+        electrodes = pd.read_csv(electrodes_path, sep=" ", header=None).values[:-1]
+
+    electrodes = electrodes.reshape(-1, 16, 3)
+
+    z_positions = [np.mean(e[:,2]) for e in electrodes]
+    if all_signals:
+        z_positions = create_equal_distant_array(n=point_levels_3d, value1=z_positions[0], value2=z_positions[1], value3=z_positions[2], value4=z_positions[3])
+    mesh_arrays = [mesh_to_image(msh, z_pos=z, resolution=resolution) for z in z_positions] 
+    points = [point[1] for point in mesh_arrays] # shape: (point_levels_3d * 512 * 512, 3)
+    center_vector = mesh_arrays[0][2]
+    # use mean z_position as center point along z-axis
+    center_vector[2] = np.mean(z_positions)
+    targets = [target[0] for target in mesh_arrays]
+    targets = np.stack(targets, axis=0)
+    points = np.stack(points, axis=0) - center_vector
+    electrodes = electrodes - center_vector
+
+    return targets, electrodes, points
+
+def load_body_shape(dir, density=0.01):
+    # get paths for mesh and electrodes
+    file_path = os.path.join(dir, 'shape')
+    shapes = os.listdir(file_path)
+    shapes = [shape for shape in shapes if fnmatch.fnmatch(shape, '*.vtk')]
+    mesh_path = os.path.join(file_path, shapes[0])
+    electrodes_path = os.path.join(dir,'electrodes/electrodes.txt')
+    coords = pd.read_csv(electrodes_path, sep=" ", header=None).values[:-1]
+    coords = coords.reshape(-1, 16, 3)
+    # get the z coordinates of the levels
+    z_coords = np.mean(coords, axis=1)[:,2]
+    # load mesh and clip it to be close to the electrode levels
+    mesh_in = pv.read(mesh_path)
+    xmin, xmax = mesh_in.bounds[:2]
+    ymin, ymax = mesh_in.bounds[2:4]
+    zmin, zmax = mesh_in.bounds[4:6]
+    z_end, z_start = create_equal_distant_array(z_coords.shape[0]+2, z_coords[0], z_coords[1], z_coords[2], z_coords[3])[[0,-1]]
+    mesh_in = mesh_in.clip_box([xmin, xmax, ymin, ymax, z_start, z_end], invert=False)
+    xmin, xmax = mesh_in.bounds[:2]
+    ymin, ymax = mesh_in.bounds[2:4]
+    zmin, zmax = mesh_in.bounds[4:6]
+    mesh_in = mesh_in.clip_box([xmin, xmax, ymin, ymax, z_start, z_end], invert=False)
+    # get the array from the mesh to obtain the voxel masks
+    mask = mesh_to_voxels(mesh_in, density)
+    # pad mask to the same shape for all cases
+    mask = pad_to_shape_centered(mask, target_shape=(256,256,256))
+    return mask

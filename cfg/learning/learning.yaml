@@ -1,42 +1,45 @@
 model:
-  _target_: model.models.AttentionModelCNN
-  # conv_out_channels: 32 
-  # conv_in_channels: 1 
-  # conv_blocks: 5 
-  # conv_features: 64 
-  nodes_resistance_network: 256
-  resistance_network_blocks: 2 # not used
-  nodes_signal_network: 256  # not used
-  signal_network_blocks: 4 # not used
-  signals_dim: 64
+  _target_: model.models.AttentionModel
+  signals_dim: 128
   num_encoding_functions: 10
   num_attention_blocks: 5
+  num_attention_nodes: 128
+  dropout_attention: 0.1
   num_electrodes: 16
-  num_position_embedding: 4
-  num_level_embdedding: 4
   num_linear_output_blocks: 3
+  linear_output_channels: 256
   use_cnn: False
+  use_tissue_embedding: False   # use masks per query point for all tissue types
+  use_tissue_body_only: False   # use masks per query point for body tissue only
+  use_body_mask: False           # use 3d body voxels
+  body_mask_blocks: 6           # e.g. 3: input 256,256,256 -> output body_mask_final_channels,64,64,64
+  body_mask_channels: 8
+  body_mask_final_channels: 8
+  emb_dropout: 0.
   cnn_in_channels: 16
   cnn_out_channels: 32
-  prob_dropout: 1.
+  prob_dropout: 0.
 
 segmentation_model:
   _target_: segmentation.models.SegmentationModel
   in_channels: 1
   out_channels: 32  
   blocks: 4
-  learning_rate: 0.0001
+  learning_rate: 0.0005
   batch_size: 16
 
 training:
-  epochs: 400
+  epochs: 800
   batch_size_train: 4
-  batch_size_val: 1
-  learning_rate: 0.0001
+  learning_rate: 0.00001
   loss_lung_multiplier: 15
   sample_points: 40000
   device: cuda
 
+validation:
+  batch_size_val: 1
+  downsample_factor_val: 2
+
 testing:
   batch_size_test: 2
-
+  downsample_factor_test: 2

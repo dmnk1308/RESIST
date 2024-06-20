@@ -14,29 +14,32 @@ import sys
 sys.path.append('../')
 from utils.helper import log_heatmaps, make_cmap
 
-def testing(model, data, batch_size, device, wandb_log=True, n_levels=6):
+def testing(model, data, batch_size, device, wandb_log=True, point_levels_3d=6, downsample_factor_test=2):
     loss = nn.MSELoss(reduction='none')
     model.eval()
     model.to(device)
     cmap = make_cmap()
     preds = []
     targets = []
+    down_resolution = 512//downsample_factor_test
     if isinstance(data, Dataset):
         dataloader = DataLoader(data, batch_size=1, shuffle=False)
-        n_levels = data.point_levels_3d
-        for points, weights, signals, electrodes, mask, target in tqdm(dataloader):
+        for points, signals, electrodes, mask, target, tissue in tqdm(dataloader):
+            points = points.reshape(dataloader.batch_size, -1, 512, 512, 3)[:,:,::downsample_factor_test,::downsample_factor_test,:].reshape(dataloader.batch_size, -1, 3)
+            target = target.reshape(dataloader.batch_size, -1, 512, 512)[:,:,::downsample_factor_test,::downsample_factor_test].reshape(dataloader.batch_size, -1, 1)
+            tissue = tissue.reshape(dataloader.batch_size, -1, 512, 512)[:,:,::downsample_factor_test,::downsample_factor_test].reshape(dataloader.batch_size, -1, 1)
             pred = model(signals=signals.to(device), 
                         masks=mask.float().to(device), 
                         electrodes=electrodes.to(device), 
                         xy=points.to(device), 
-                        weights=weights.to(device),
+                        tissue=tissue.to(device),
                         training=False)
             preds.append(pred.detach().cpu())
             targets.append(target.detach().cpu())
         preds = torch.cat(preds)
         targets = torch.cat(targets)
-        targets = targets.reshape(-1, 512, 512, 1)
-        preds = preds.reshape(-1, 512, 512, 1)
+        targets = targets.reshape(-1, down_resolution, down_resolution, 1)
+        preds = preds.reshape(-1, down_resolution, down_resolution, 1)
         test_loss = loss(preds.to(device), targets.to(device))
         lung_points = (targets <= 0.2) * (targets >= 0.05)
         lung_points = lung_points * (preds<=0.25)
@@ -58,7 +61,7 @@ def testing(model, data, batch_size, device, wandb_log=True, n_levels=6):
         wandb.log({"test_loss": test_loss})    
         wandb.log({"test_lung_loss": test_lung_loss})
         # log qualitative results
-        log_heatmaps(targets, preds, n_levels=n_levels, cmap=cmap)
+        log_heatmaps(targets, preds, n_levels=point_levels_3d, cmap=cmap)
     else:
         print('Test Loss: ', test_loss)
         print('Test Lung Loss: ', test_lung_loss)

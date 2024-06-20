@@ -19,79 +19,54 @@ class ResBlock(nn.Module):
         y = self.layer(x)
         return nn.functional.relu(y + self.res_conv(x))
     
-class SelfAttentionLayer(nn.Module):
-    def __init__(self, in_dim, dim_kqv = 128, heads=8):
-        super(SelfAttentionLayer, self).__init__()
-        self.in_dim = in_dim
-        self.heads = heads        
-        
-        # Define query, key, and value linear transformations for each head
-        self.query = nn.Linear(in_dim, dim_kqv, bias=False)
-        self.key = nn.Linear(in_dim, dim_kqv, bias=False)
-        self.value = nn.Linear(in_dim, dim_kqv, bias=False)
-        
-        self.multi_head = nn.MultiheadAttention(dim_kqv, num_heads=heads, dropout=0.1, batch_first=True)
-
-        self.fc_out = nn.Linear(dim_kqv, in_dim)
-    
+class FeedForward(nn.Module):
+    def __init__(self, in_channels, dropout=0.1):
+        super(FeedForward, self).__init__()
+        self.linear1 = nn.Linear(in_channels, 4*in_channels)
+        self.linear2 = nn.Linear(4*in_channels, in_channels)
+        self.dropout = nn.Dropout(dropout)
     def forward(self, x):
-        query = self.query(x)
-        key = self.key(x)
-        value = self.value(x)
-        x = self.multi_head(query, key, value, need_weights=False)[0]
-        out = self.fc_out(x)
-        return out
+        x = nn.functional.gelu(self.linear1(x))
+        x = self.linear2(x)
+        x = self.dropout(x)
+        return x
     
+
 class SelfAttentionBlock(nn.Module):
     def __init__(self,
-                 in_dim,
-                 heads=8):
+                 dim_kqv = 128,
+                 heads=8,
+                 dropout=0.1):
         super(SelfAttentionBlock, self).__init__()
-        self.multihead_selfattention = SelfAttentionLayer(in_dim=in_dim, heads=heads)
-        self.linear = nn.Linear(in_dim, in_dim)
+        
+        self.multi_head = nn.MultiheadAttention(dim_kqv, num_heads=heads, dropout=dropout, batch_first=True)    
+        self.linear = FeedForward(dim_kqv, dropout=dropout)
+        self.layer_norm1 = nn.LayerNorm(dim_kqv)
+        self.layer_norm2 = nn.LayerNorm(dim_kqv)
 
     def forward(self, x):
-        y = self.multihead_selfattention(x) + x
-        y = nn.functional.layer_norm(y, y.shape[1:])
-        y = self.linear(y) + y
-        y = nn.functional.layer_norm(y, y.shape[1:])
-        return y
+        x_tmp = self.layer_norm1(x)
+        x = self.multi_head(x_tmp, x_tmp, x_tmp, need_weights=False)[0] + x
+        x = self.linear(self.layer_norm2(x)) + x
+        return x
 
-# ATTENTION MODEL
-class AttentionLayer(nn.Module):
-    def __init__(self, in_dim, in_dim_q, dim_kqv = 128, heads=8):
-        super(AttentionLayer, self).__init__()
-        self.in_dim = in_dim
-        self.heads = heads
-        
-        # Define query, key, and value linear transformations for each head
-        self.query = nn.Linear(in_dim_q, dim_kqv, bias=False)
-        self.key = nn.Linear(in_dim, dim_kqv, bias=False)
-        self.value = nn.Linear(in_dim, dim_kqv, bias=False)
-        
-        self.multi_head = nn.MultiheadAttention(dim_kqv, num_heads=heads, dropout=0.1, batch_first=True)
-
-        self.fc_out = nn.Linear(dim_kqv, in_dim_q)
-    
-    def forward(self, x, y):
-        query = self.query(y)
-        key = self.key(x)
-        value = self.value(x)
-        x = self.multi_head(query, key, value, need_weights=False)[0]
-        out = self.fc_out(x)
-        return out
-    
 class AttentionBlock(nn.Module):
-    def __init__(self, in_dim, in_dim_q, heads=8):
+    def __init__(self, 
+                 dim_q=128, 
+                 dim_kv = 128, 
+                 heads=8, 
+                 dropout=0.1):
         super(AttentionBlock, self).__init__()
-        self.multihead_attention = AttentionLayer(in_dim, in_dim_q=in_dim_q, heads=heads)
-        self.linear = nn.Linear(in_dim_q, in_dim_q)
+        self.multi_head = nn.MultiheadAttention(dim_q, num_heads=heads, dropout=dropout, batch_first=True, kdim=dim_kv, vdim=dim_kv)    
+        self.linear = FeedForward(dim_q, dropout=dropout)
+        self.layer_norm1 = nn.LayerNorm(dim_q)
+        self.layer_norm2 = nn.LayerNorm(dim_q)
 
     def forward(self, x, y):
-        y = self.multihead_attention(x, y) + y
-        y = nn.functional.layer_norm(y, y.shape[1:])
-        y = self.linear(y) + y
-        y = nn.functional.layer_norm(y, y.shape[1:])
+        # x is key, value | y is query
+        y = self.layer_norm1(y)
+        y = self.multi_head(y, x, x, need_weights=False)[0] + y
+        y = self.linear(self.layer_norm2(y)) + y
         return y
 
 class UNetBLock(nn.Module):
@@ -142,3 +117,29 @@ class ResNetBlock(nn.Module):
     def forward(self, x):
         out = self.layer(x)
         return out + self.res_conv(x)
+
+class Conv3DNet(nn.Module):
+    def __init__(self, channels, final_out_channels, blocks, downscaled_channels):
+        super(Conv3DNet, self).__init__()
+        
+        self.conv_layer = nn.ModuleList()
+        in_channels = 1
+        for i in range(blocks):
+            self.conv_layer.append(nn.Conv3d(in_channels, channels, kernel_size=3, padding=1))
+            self.conv_layer.append(nn.BatchNorm3d(channels))
+            self.conv_layer.append(nn.ReLU())
+            in_channels = channels
+            if i != blocks-1:
+                channels = channels*2
+                self.conv_layer.append(nn.MaxPool3d(kernel_size=2, stride=2, padding=0))
+        self.conv_layer = nn.Sequential(*self.conv_layer)
+
+        self.conv_last = nn.Conv3d(channels, final_out_channels, kernel_size=1)  
+        flattened_dim = ((256/(2**(blocks-1)))**3) * final_out_channels
+        self.linear = nn.Linear(int(flattened_dim), downscaled_channels)
+    def forward(self, x):
+        x = self.conv_layer(x)
+        x = self.conv_last(x)
+        x = x.reshape(x.shape[0], -1)
+        x = self.linear(x)
+        return x

@@ -100,7 +100,6 @@ def get_mask_target_electrodes(dir, resolution=128, electrode_resolution=512, me
     ''' 
     Returns the mask of the body shape and the coordinates of the electrodes.
     '''
-    # TO DO: update function, remove unused arguments
     # load raw stl file 
     if mesh_from_nas:
         file_path = os.path.join(dir, 'shape')
@@ -152,15 +151,7 @@ def get_mask_target_electrodes(dir, resolution=128, electrode_resolution=512, me
             electrodes_path = os.path.join(folder_path, electrodes_path)
         electrodes = pd.read_csv(electrodes_path, sep=" ", header=None).values[:-1]
 
-    # discretize the mesh
-    slices = np.linspace(zlim[0], zlim[1], electrode_resolution)
-    xrange = np.linspace(xlim[0], xlim[1], electrode_resolution)
-    yrange = np.linspace(ylim[0], ylim[1], electrode_resolution)
-
     electrodes = electrodes.reshape(-1, 16, 3)
-    # for e in electrodes:
-    #     e[:,0] = np.array([find_nearest(xrange, ex) for ex in e[:,0]])
-    #     e[:,1] = np.array([find_nearest(yrange, ey) for ey in e[:,1]])
 
     z_positions = [np.mean(e[:,2]) for e in electrodes]
     if all_signals:
@@ -174,9 +165,7 @@ def get_mask_target_electrodes(dir, resolution=128, electrode_resolution=512, me
     targets = np.stack(targets, axis=0)
     points = np.stack(points, axis=0) - center_vector
     electrodes = electrodes - center_vector
-    # bounds_mean = np.asarray(bounds).reshape(3,2).mean(axis=1).reshape(1, 1, 3)
-    # electrodes = electrodes - bounds_mean
-    # electrodes[:,:,:2] = electrodes[:,:,:2] / (electrode_resolution/resolution)
+
     return targets, electrodes, points
 
 def change_rho(targets, lung_rhos):
@@ -185,6 +174,12 @@ def change_rho(targets, lung_rhos):
     for i,lung_rho in enumerate(lung_rhos):
         class_resistancies[2] = 1/float(lung_rho)
         targets_rho.append(class_resistancies[targets])
+    targets_rho = np.stack(targets_rho, axis=0)
+    return targets_rho
+
+def change_rho_single(targets, lung_rho):
+    class_resistancies = np.array([0., 0.3, 0, 0.7, 0.02, 0.025])
+    class_resistancies[2] = 1/float(lung_rho)
     targets_rho = np.stack(targets_rho, axis=0)
     return targets_rho
 
@@ -234,11 +229,12 @@ def create_equal_distant_array(n, value1, value2, value3, value4):
     '''
     Create an equal distant array between value1 and value2 and value3 and value4 and adds an additional point at the beginning and end.
     '''
-    if n < 6:
-        raise ValueError("n must be at least 5 to place values correctly")
+    if n == 4:
+        return np.array([value1, value2, value3, value4])
+    elif n < 6:
+        raise ValueError("n must be at least 6 to place values correctly")
     if n % 3 != 0:
-        raise ValueError("n must be divisible by 3 to place values correctly")
-
+        raise ValueError("n must be divisible by 3 and greater than 3 to place values correctly")
     if value1 <= value2 or value2 <= value3 or value1 <= value3:
         raise ValueError("Check the z-coordinates, as the values are not decreasing in their values")
 
@@ -251,3 +247,70 @@ def create_equal_distant_array(n, value1, value2, value3, value4):
     dist_end = np.abs(array3[1] - array3[0])
     array = np.concatenate((np.array([value1 + dist_begin]), array1, array2[1:], array3[1:], np.array([value4 - dist_end])))
     return array
+
+def pad_to_shape_centered(array, target_shape, padding_value=0):
+    """
+    Pad a 3D numpy array to fit a specified resolution in 3D, centering the original array.
+    
+    Parameters:
+    array (np.ndarray): The input 3D array to pad.
+    target_shape (tuple): The desired shape of the output array (z, y, x).
+    padding_value (int, float, optional): The value to use for padding. Defaults to 0.
+    
+    Returns:
+    np.ndarray: The padded array.
+    """
+    # Current shape of the input array
+    current_shape = array.shape
+    
+    # Calculate padding for each dimension to center the original array
+    pad_z1 = (target_shape[0] - current_shape[0]) // 2
+    pad_z2 = target_shape[0] - current_shape[0] - pad_z1
+    
+    pad_y1 = (target_shape[1] - current_shape[1]) // 2
+    pad_y2 = target_shape[1] - current_shape[1] - pad_y1
+    
+    pad_x1 = (target_shape[2] - current_shape[2]) // 2
+    pad_x2 = target_shape[2] - current_shape[2] - pad_x1
+    
+    # Apply padding
+    padded_array = np.pad(
+        array, 
+        ((pad_z1, pad_z2), (pad_y1, pad_y2), (pad_x1, pad_x2)), 
+        mode='constant', 
+        constant_values=padding_value
+    )
+    return padded_array
+
+
+# sort list of strings by case first and then by resistivity 
+def extract_keys(filename):
+    """
+    Extract the third-to-last and last numerical keys from a filename of the format 'abc_x_y_key.npz'.
+    
+    Parameters:
+    filename (str): The filename to extract the keys from.
+    
+    Returns:
+    tuple: A tuple containing the third-to-last and last numerical keys.
+    """
+    # Split the filename by underscores
+    parts = filename.split('_')
+    # Extract the third-to-last part (key1) and the last part (key2 with .npz extension)
+    key1 = int(parts[-3])
+    key2_with_extension = parts[-1]
+    # Remove the .npz extension to get the key2
+    key2 = int(key2_with_extension.split('.')[0])
+    return key1, key2
+
+def sort_filenames(filenames):
+    """
+    Sort a list of filenames by the third-to-last key first, and then by the last key.
+    
+    Parameters:
+    filenames (list of str): The list of filenames to sort.
+    
+    Returns:
+    list of str: The sorted list of filenames.
+    """
+    return sorted(filenames, key=extract_keys)

@@ -8,6 +8,26 @@ def convert_to_vtk(nas_file_path):
     vtk_file_path = nas_file_path.split('.nas')[0]+'.vtk'
     meshio.write(vtk_file_path, mesh)
 
+def mesh_to_voxels(mesh: pv.PolyData, density:float):
+    x_min, x_max, y_min, y_max, z_min, z_max = mesh.bounds
+    x = np.arange(x_min, x_max, density)
+    y = np.arange(y_min, y_max, density)
+    z = np.arange(z_min, z_max, density)
+    x, y, z = np.meshgrid(x, y, z)
+
+    # Create unstructured grid from the structured grid
+    grid = pv.StructuredGrid(x, y, z)
+    ugrid = pv.UnstructuredGrid(grid)
+
+    # get part of the mesh within the mesh's bounding surface.
+    selection = ugrid.select_enclosed_points(mesh.extract_surface(),
+                                            tolerance=0.0,
+                                            check_surface=False)
+    mask = selection['SelectedPoints'].view(bool)
+    mask = mask.reshape(x.shape, order='F')
+    mask = np.array(mask)
+    return mask
+
 def mesh_to_image(mesh, resolution=512, z_pos=None, box_size=None, return_mask=False):
     '''
     Extracts an image from the given mesh along the z_pos.

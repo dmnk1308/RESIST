@@ -5,6 +5,6 @@ defaults:
 - hydra: hydra
 
 inference: False
-inference_path: outputs/2024-05-02/20-06-53
+inference_path: /home/nibdombe/deep_eit/outputs/2024-06-10/23-49-31
 segmentation_model: False
 

@@ -11,12 +11,10 @@ def positional_encoding(tensor, num_encoding_functions=6, freq=2.):
     Returns:
     (torch.Tensor): Positional encoding of the input tensor.
     """
-    scale = torch.pi/2
     encoding = []
-    
-    frequency_bands = scale * (freq ** torch.linspace(
-        0.0,
-        num_encoding_functions - 1,
+    frequency_bands = torch.pi * (freq ** torch.linspace(
+        -1.0,
+        num_encoding_functions - 2,
         num_encoding_functions,
         dtype=tensor.dtype,
         device=tensor.device,

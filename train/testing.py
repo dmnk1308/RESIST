@@ -14,7 +14,8 @@ import sys
 sys.path.append('../')
 from utils.helper import log_heatmaps, make_cmap
 
-def testing(model, data, batch_size, device, wandb_log=True, point_levels_3d=6, downsample_factor_test=2):
+def testing(model, data, batch_size, device, wandb_log=True, point_levels_3d=6, downsample_factor_test=2, model_3d=False):
+    model.eval()
     loss = nn.MSELoss(reduction='none')
     model.eval()
     model.to(device)
@@ -28,6 +29,11 @@ def testing(model, data, batch_size, device, wandb_log=True, point_levels_3d=6, 
             points = points.reshape(dataloader.batch_size, -1, 512, 512, 3)[:,:,::downsample_factor_test,::downsample_factor_test,:].reshape(dataloader.batch_size, -1, 3)
             target = target.reshape(dataloader.batch_size, -1, 512, 512)[:,:,::downsample_factor_test,::downsample_factor_test].reshape(dataloader.batch_size, -1, 1)
             tissue = tissue.reshape(dataloader.batch_size, -1, 512, 512)[:,:,::downsample_factor_test,::downsample_factor_test].reshape(dataloader.batch_size, -1, 1)
+            if not model_3d:
+                signals = signals.reshape(int(signals.shape[0] * 4), -1, signals.shape[2])
+                points = points.reshape(int(points.shape[0] * 4), -1, points.shape[2])[:,:,:2]
+                electrodes = electrodes.reshape(int(electrodes.shape[0] * 4), -1, electrodes.shape[2], electrodes.shape[3], electrodes.shape[4], electrodes.shape[5])
+                target = target.reshape(int(target.shape[0] * 4), -1, target.shape[2])
             pred = model(signals=signals.to(device), 
                         masks=mask.float().to(device), 
                         electrodes=electrodes.to(device), 
@@ -51,7 +57,8 @@ def testing(model, data, batch_size, device, wandb_log=True, point_levels_3d=6, 
     else:
         pred = model(signals=data[0].to(device), 
                     electrodes=data[1].to(device), 
-                    xy=data[2].to(device), training=False).detach().cpu()
+                    xy=data[2].to(device), 
+                    training=False).detach().cpu()
         preds = pred.reshape(-1, 512, 512, 1)
         test_loss = np.nan
         test_lung_loss = np.nan

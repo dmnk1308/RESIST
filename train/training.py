@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import Adam
+from torch.optim.lr_scheduler import StepLR
 import torch.nn.functional as F
 from tqdm import tqdm
 import wandb
@@ -11,20 +12,25 @@ sys.path.append('../')
 from utils.helper import log_heatmaps, make_cmap
 from train.metrics import masked_mse
 
-def training(model, train_dataset, val_dataset, epochs, batch_size_train, lr, device, loss_lung_multiplier=1, batch_size_val=2, point_levels_3d=9, downsample_factor_val=2, output_dir=None):
+def training(model, train_dataset, val_dataset, epochs, batch_size_train, lr, device, loss_lung_multiplier=1, batch_size_val=2, point_levels_3d=9, model_3d=False, downsample_factor_val=2, output_dir=None):
     print('Initializing Dataloader...', end=' ')
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size_train, shuffle=True)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size_val, shuffle=False)
     print('Done.')
     optimizer = Adam(model.parameters(), lr=lr)
+    scheduler = StepLR(optimizer, step_size=300, gamma=0.5)
+
     loss = nn.MSELoss(reduction='none')
     pbar = tqdm(range(epochs))
     best_val_loss = 100
+    best_lung_val_loss = 100
     cmap = make_cmap()
     for epoch in pbar:
-        epoch_loss_train, epoch_lung_loss_train, model, optimizer = training_step(model, train_dataloader, optimizer, lr, loss, device, epoch, loss_lung_multiplier)
+        epoch_loss_train, epoch_lung_loss_train, model, optimizer = training_step(model, train_dataloader, optimizer, lr, loss, device, epoch, loss_lung_multiplier, model_3d)
+        scheduler.step()
         torch.cuda.empty_cache()
-        epoch_loss_val, epoch_lung_loss_val = validation_step(model, val_dataloader, loss, device, cmap, point_levels_3d=point_levels_3d, downsample_factor_val=downsample_factor_val)
+        epoch_loss_val, epoch_lung_loss_val = validation_step(model, val_dataloader, loss, device, cmap, 
+                                                              point_levels_3d=point_levels_3d, downsample_factor_val=downsample_factor_val, model_3d=model_3d)
         pbar.set_description(f"Epoch: {epoch+1}, Train Loss: {epoch_loss_train:.5f}, Val Loss: {epoch_loss_val:.5f},  Train Lung Loss: {epoch_lung_loss_train:.5f}, Val Lung Loss: {epoch_lung_loss_val:.5f}")
         wandb.log({"train_loss": epoch_loss_train, "train_lung_loss": epoch_lung_loss_train, "val_loss": epoch_loss_val,"val_lung_loss": epoch_lung_loss_val})
         if epoch_loss_val < best_val_loss:
@@ -35,9 +41,17 @@ def training(model, train_dataset, val_dataset, epochs, batch_size_train, lr, de
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': loss}
             torch.save(checkpoint, os.path.join(output_dir, 'model.pt'))
+        if epoch_lung_loss_val < best_lung_val_loss:
+            best_lung_val_loss = epoch_lung_loss_val
+            checkpoint = {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': loss}
+            torch.save(checkpoint, os.path.join(output_dir, 'model_lung.pt'))
     return model
 
-def training_step(model, dataloader, optimizer, lr, loss, device, epoch, loss_lung_multiplier):
+def training_step(model, dataloader, optimizer, lr, loss, device, epoch, loss_lung_multiplier, model_3d):
     model.train()
     model.to(device)
     epoch_loss = 0
@@ -46,13 +60,18 @@ def training_step(model, dataloader, optimizer, lr, loss, device, epoch, loss_lu
         optimizer.zero_grad()
         if model.use_body_only:
             tissue = torch.where(tissue > 0, 1, 0)
+        if not model_3d:
+            signals = signals.reshape(int(signals.shape[0] * 4), -1, signals.shape[2])
+            points = points.reshape(int(points.shape[0] * 4), -1, points.shape[2])[:,:,:2]
+            electrodes = electrodes.reshape(int(electrodes.shape[0] * 4), -1, electrodes.shape[2], electrodes.shape[3], electrodes.shape[4], electrodes.shape[5])[:,:,:,:,:,:2]
+            targets = targets.reshape(int(targets.shape[0] * 4), -1, targets.shape[2])
         pred = model(signals=signals.to(device), 
                      masks=mask.float().to(device), 
                      electrodes=electrodes.to(device), 
                      xy=points.to(device),
                      tissue=tissue.to(device))
         l = loss(pred, targets.to(device))
-        lung_points = (targets <= 0.2) * (targets >= 0.05) #* (pred.detach().cpu()<=0.25)
+        lung_points = (targets <= 0.2) * (targets >= 0.05)
         l[lung_points.squeeze()] *= loss_lung_multiplier
         l = l.mean()
         l.backward()
@@ -65,7 +84,7 @@ def training_step(model, dataloader, optimizer, lr, loss, device, epoch, loss_lu
     lung_loss /= (i+1)
     return epoch_loss, lung_loss, model, optimizer
 
-def validation_step(model, dataloader, loss, device, cmap, point_levels_3d=6, n_examples=4, downsample_factor_val=2):
+def validation_step(model, dataloader, loss, device, cmap, point_levels_3d=6, n_examples=4, downsample_factor_val=2, model_3d=False):
     model.eval()
     model.to(device)
     epoch_loss = 0
@@ -83,6 +102,11 @@ def validation_step(model, dataloader, loss, device, cmap, point_levels_3d=6, n_
         tissue = tissue.reshape(dataloader.batch_size, -1, 512, 512)[:,:,::downsample_factor_val,::downsample_factor_val].reshape(dataloader.batch_size, -1, 1)
         if model.use_body_only:
             tissue = torch.where(tissue > 0, 1, 0)     
+        if not model_3d:
+            signals = signals.reshape(int(signals.shape[0] * 4), -1, signals.shape[2])
+            points = points.reshape(int(points.shape[0] * 4), -1, points.shape[2])[:,:,:2]
+            electrodes = electrodes.reshape(int(electrodes.shape[0] * 4), -1, electrodes.shape[2], electrodes.shape[3], electrodes.shape[4], electrodes.shape[5])[:,:,:,:,:,:2]
+            target = target.reshape(int(target.shape[0] * 4), -1, target.shape[2])
         pred = model(signals=signals.to(device), 
                      masks=mask.float().to(device), 
                      electrodes=electrodes.to(device), 

@@ -62,12 +62,17 @@ class AttentionBlock(nn.Module):
         self.layer_norm1 = nn.LayerNorm(dim_q)
         self.layer_norm2 = nn.LayerNorm(dim_q)
 
-    def forward(self, x, y):
+    def forward(self, x, y, return_weights=False):
         # x is key, value | y is query
         y = self.layer_norm1(y)
-        y = self.multi_head(y, x, x, need_weights=False)[0] + y
+        if return_weights:
+            y_tmp, weights = self.multi_head(y, x, x, need_weights=return_weights)
+            y = y_tmp + y
+        else:
+            weights = None
+            y = self.multi_head(y, x, x, need_weights=return_weights)[0] + y
         y = self.linear(self.layer_norm2(y)) + y
-        return y
+        return y, weights
 
 class UNetBLock(nn.Module):
     def __init__(self, in_channels, out_channels, blocks=3, **kwargs):

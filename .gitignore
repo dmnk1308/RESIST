@@ -1,7 +1,8 @@
 side_processing/old
 deep_eit.*
 data
-outputs
+outputs*
 *__pycache*
 singularity
-
+logs*
+wandb*

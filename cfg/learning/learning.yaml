@@ -2,9 +2,10 @@ model:
   _target_: model.models.AttentionModel
   attention_on: 'sequence'      # signal (individual meas.) or sequence (all meas. of a cycle)
   num_attention_blocks: 5
-  num_encoding_functions: 10
-  attention_dim: 128
-  dropout_attention: 0.1
+  num_encoding_functions_electrodes: 10
+  num_encoding_functions_points: 10
+  attention_dim: 256
+  dropout_attention: 0.2
   num_electrodes: 16
   num_linear_output_blocks: 3
   linear_output_channels: 256
@@ -18,18 +19,11 @@ model:
   emb_dropout: 0.
   cnn_in_channels: 16
   cnn_out_channels: 32
-  prob_dropout: 0.0
-
-segmentation_model:
-  _target_: segmentation.models.SegmentationModel
-  in_channels: 1
-  out_channels: 32  
-  blocks: 4
-  learning_rate: 0.0001
-  batch_size: 16
+  signal_emb: 8
+  prob_dropout: 0.1
 
 training:
-  epochs: 800
+  epochs: 600
   batch_size_train: 4
   learning_rate: 0.0001
   loss_lung_multiplier: 8

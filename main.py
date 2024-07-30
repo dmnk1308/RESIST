@@ -2,11 +2,10 @@ import os
 import sys
 import torch
 sys.path.append('../..')
-from data_processing.dataset_3d import load_dataset_3d, write_npz_case_3d
+from data_processing.dataset_3d import load_dataset_3d
 from train.training import training
 from train.testing import testing
 from utils.helper import get_all_cases, set_seeds
-from segmentation.training import training as seg_training
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import wandb
@@ -35,7 +34,8 @@ def main(cfg: DictConfig, inference=False):
                 translation_x=cfg.data.translation_x, translation_y=cfg.data.translation_y, translation_z=cfg.data.translation_z,
                 point_levels_3d=cfg.data.point_levels_3d, point_range_3d=cfg.data.point_range_3d,
                 multi_process=cfg.data.multi_process, num_workers=cfg.data.num_workers, all_signals=cfg.data.all_signals,
-                use_body_mask = cfg.learning.model.use_body_mask
+                use_body_mask = cfg.learning.model.use_body_mask,
+                signal_norm=cfg.data.signal_norm
                 )
     # name = f'{cfg.data.translation_x}_{cfg.data.translation_y}_{cfg.data.translation_z}_{cfg.learning.model.prob_dropout}_{cfg.learning.model.signals_dim}_{cfg.learning.model.num_attention_blocks}_{cfg.learning.model.nodes_resistance_network}'
     run = wandb.init(project='deep_eit',

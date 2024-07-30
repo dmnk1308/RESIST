@@ -18,7 +18,7 @@ def load_dataset_3d(cases, resolution=512, n_sample_points=10000,
                  base_dir="", raw_data_folder="data/raw", processed_data_folder="data/processed", dataset_data_folder="data/datasets", 
                  name_prefix="", write_dataset=False, write_npz=False, overwrite_npz=False, return_electrodes=True,
                  apply_rotation=False, apply_subsampling=True, apply_translation=True, translation_x=0, translation_y=0, translation_z=0,
-                 point_levels_3d=9, point_range_3d=0.05, num_workers=None, multi_process=True, all_signals=False,
+                 point_levels_3d=9, point_range_3d=0.05, num_workers=None, multi_process=True, all_signals=False, signal_norm='all',
                  use_body_mask=False):
     '''
     Returns:
@@ -55,7 +55,7 @@ def load_dataset_3d(cases, resolution=512, n_sample_points=10000,
                      apply_subsampling=apply_subsampling, apply_rotation=apply_rotation, apply_translation=apply_translation,
                      translation_x=translation_x, translation_y=translation_y, translation_z=translation_z,
                      path_test_dataset=path_test_dataset, path_val_dataset=path_val_dataset, path_train_dataset=path_train_dataset,
-                     return_electrodes=return_electrodes, use_body_mask=use_body_mask)
+                     return_electrodes=return_electrodes, use_body_mask=use_body_mask, signal_norm=signal_norm)
 
     train_dataset = torch.load(path_train_dataset)
     val_dataset = torch.load(path_val_dataset)
@@ -111,7 +111,6 @@ def make_npz_3d(cases, raw_data_folder="data/raw", processed_data_folder="data/p
 def write_npz_case_3d(case, raw_data_folder="data/raw", processed_data_folder="data/processed/3d", resolution=128,
                       point_levels_3d=9, point_range_3d=0.05, multi=False, all_signals=False):
     # how many levels and how many measurements per level do we have?
-    print(case)
     if isinstance(case, int):
         case = 'case_'+str(case)
     case_dir = os.path.join(raw_data_folder, case)
@@ -156,7 +155,7 @@ def make_dataset_3d(cases, processed_data_folder="data/processed", base_dir='',r
                  n_sample_points=10000, return_electrodes=True, point_levels_3d=9,
                  apply_rotation=False, apply_subsampling=True, apply_translation=True, translation_x=0, translation_y=0, translation_z=0,
                  path_test_dataset="data/datasets/test_dataset_3d.pt", path_val_dataset="data/datasets/val_datasett_3d.pt", 
-                 path_train_dataset="data/datasets/train_datasett_3d.pt", use_body_mask=False):
+                 path_train_dataset="data/datasets/train_datasett_3d.pt", use_body_mask=False, signal_norm='all'):
     set_seeds(123)
 
     # split into training, validation and test
@@ -185,11 +184,15 @@ def make_dataset_3d(cases, processed_data_folder="data/processed", base_dir='',r
         file_path = os.path.join(processed_data_folder, case, file)
         points = np.load(file_path)['points']
         if i==0:
-            # old: points[:,:,:2].max()
+            
             max_coord = points[:,:,:2].max()
             min_coord = points[:,:,:2].min() 
             max_coord_z = points[:,:,2].max()
             min_coord_z = points[:,:,2].min()
+            # max_coord = points.max()
+            # min_coord = points.min() 
+            # max_coord_z = 0
+            # min_coord_z = 0
         else:
             if max_coord < points[:,:,:2].max():
                 max_coord = points[:,:,:2].max()
@@ -199,19 +202,28 @@ def make_dataset_3d(cases, processed_data_folder="data/processed", base_dir='',r
                 max_coord_z = points[:,:,2].max()
             if min_coord_z > points[:,:,2].min():
                 min_coord_z = points[:,:,2].min()
+            # if max_coord < points.max():
+            #     max_coord = points.max()
+            # if min_coord > points.min():
+            #     min_coord = points.min()
         if case in train_cases:
             signals.append(np.load(file_path)['signals'])
     # normalize signals
     train_signals = torch.from_numpy(np.concatenate(signals, axis=0)).reshape(-1, 4, 16, 13)
-    # each channel separetely (4, 16, 13)
-    train_signal_mean = train_signals.mean(dim=(0), keepdim=True)
-    train_signal_std = train_signals.std(dim=(0), keepdim=True)
-    # 13 channels in cycle (1, 1, 1, 13)
-    # train_signal_mean = train_signals.mean(dim=(0,1,2), keepdim=True)
-    # train_signal_std = train_signals.std(dim=(0,1,2), keepdim=True)
-    # across all channels (1, 1, 1, 1)
-    # train_signal_mean = train_signals.mean(dim=(0,1,2,3), keepdim=True)
-    # train_signal_std = train_signals.std(dim=(0,1,2,3), keepdim=True)
+    if signal_norm=='all':
+        # each channel separetely (1, 4, 16, 13)
+        train_signal_mean = train_signals.mean(dim=(0), keepdim=True)
+        train_signal_std = train_signals.std(dim=(0), keepdim=True)
+    elif signal_norm=='cycle':
+        # 13 channels in cycle (1, 1, 1, 13)
+        train_signal_mean = train_signals.mean(dim=(0,1,2), keepdim=True)
+        train_signal_std = train_signals.std(dim=(0,1,2), keepdim=True)
+    elif signal_norm=='single':
+        # across all channels (1, 1, 1, 1)
+        train_signal_mean = train_signals.mean(dim=(0,1,2,3), keepdim=True)
+        train_signal_std = train_signals.std(dim=(0,1,2,3), keepdim=True)
+    else:
+        Exception('Signal norm must be "all", "cycle" or "single"')
 
     train_dataset = EITData3D(train_cases, resolution=resolution, training=True, n_sample_points=n_sample_points, train_mean=train_signal_mean, train_std=train_signal_std, 
                               point_levels_3d=point_levels_3d, return_electrodes=return_electrodes, min_coords=min_coord, max_coords=max_coord, min_coords_z=min_coord_z, max_coords_z=max_coord_z,
@@ -312,9 +324,11 @@ class EITData3D(Dataset):
         else:
             mask = torch.zeros((1,1))
         electrode =  torch.from_numpy(file['electrodes'])
+        # electrode = (electrode - self.points_min) / (self.points_max - self.points_min) * 2 - 1
         electrode[:,:,:,:,:2] = (electrode[:,:,:,:,:2] - self.points_min) / (self.points_max - self.points_min) * 2 - 1
         electrode[:,:,:,:,2] = (electrode[:,:,:,:,2] - self.points_min_z) / (self.points_max_z - self.points_min_z) * 2 - 1
         points =  torch.from_numpy(file['points']).reshape(-1, 3)
+        # points= (points - self.points_min) / (self.points_max - self.points_min) * 2 - 1
         points[:,:2] = (points[:,:2] - self.points_min) / (self.points_max - self.points_min) * 2 - 1
         points[:,2] = (points[:,2] - self.points_min_z) / (self.points_max_z - self.points_min_z) * 2 - 1
 

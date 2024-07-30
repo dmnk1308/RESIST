@@ -7,29 +7,30 @@ from model.model_blocks import *
 from data_processing.helper import combine_electrode_positions
 
 class AttentionModel(nn.Module):
-    def __init__(self, num_encoding_functions=6, num_electrodes=16, num_attention_blocks=4, 
+    def __init__(self, num_encoding_functions_electrodes=10, num_encoding_functions_points=10, num_electrodes=16, num_attention_blocks=4, 
                  attention_dim=128, num_linear_output_blocks=4, cnn_in_channels=16, cnn_out_channels=32, linear_output_channels=512, 
                  prob_dropout=1., emb_dropout=0.2, training=True, use_cnn=True, use_tissue_embedding=False, num_tissue_classes=6, 
                  use_body_only=True, use_body_mask=False, body_mask_channels=4, body_mask_blocks=5, body_mask_final_channels=6,
                  dropout_attention=0.1, model_3d=False, signal_emb=4, attention_on='signal',
                  **kwargs):
         super(AttentionModel, self).__init__()
-        self.num_encoding_functions = num_encoding_functions
+        self.num_encoding_functions_electrodes = num_encoding_functions_electrodes
+        self.num_encoding_functions_points = num_encoding_functions_points
         self.attention_on = attention_on
         self.num_electrodes = num_electrodes
         self.num_pe_electrodes = 4  
         if model_3d:  
             # input dimension for linear processing before self attention 
             if attention_on == 'sequence':
-                self.dim_electrodes_pe = 13 * self.num_pe_electrodes * 3 * (2*num_encoding_functions)
+                self.dim_electrodes_pe = 13 * self.num_pe_electrodes * 3 * (2*num_encoding_functions_electrodes)
             elif attention_on == 'signal':
-                self.dim_electrodes_pe = self.num_pe_electrodes * 3 * (2*num_encoding_functions)
+                self.dim_electrodes_pe = self.num_pe_electrodes * 3 * (2*num_encoding_functions_electrodes)
             else:
                 Exception('attention_on must be either "sequence" or "signal"')
             # input dimension for linear processing of embeddings
-            self.dim_signal_emb_out = self.num_pe_electrodes * 3 * (2*num_encoding_functions)
+            self.dim_signal_emb_out = self.num_pe_electrodes * 3 * (2*num_encoding_functions_electrodes)
         else:
-            self.dim_electrodes_pe = 13 * self.num_pe_electrodes * 2 * (2*num_encoding_functions)
+            self.dim_electrodes_pe = 13 * self.num_pe_electrodes * 2 * (2*num_encoding_functions_electrodes)
         self.attention_dim = attention_dim
         self.prob_dropout = float(prob_dropout)
         self.num_linear_output_blocks = num_linear_output_blocks
@@ -58,9 +59,9 @@ class AttentionModel(nn.Module):
 
         # ATTENTION
         if model_3d:
-            points_dim = 3*2*num_encoding_functions
+            points_dim = 3*2*num_encoding_functions_points
         else:
-            points_dim = 2*2*num_encoding_functions
+            points_dim = 2*2*num_encoding_functions_points
         self.linear_points = nn.Linear(points_dim, attention_dim)
         self.linear_points_ln = nn.LayerNorm(attention_dim)
         self.attention = nn.ModuleList()
@@ -94,7 +95,7 @@ class AttentionModel(nn.Module):
         if use_cnn:
             self.cnn = UNetBLock(in_channels=cnn_in_channels, out_channels=cnn_out_channels)
         
-    def forward(self, signals, electrodes, xy, masks=None, tissue=None, **kwargs):
+    def forward(self, signals, electrodes, xy, masks=None, tissue=None, return_attention_weights=False, training=False, **kwargs):
         # signals:      bx4x16x13
         # electrodes:   bx4x16x13x4x3
         # x:            bxnx3
@@ -106,37 +107,39 @@ class AttentionModel(nn.Module):
         num_electrodes = electrodes.shape[2]*electrodes.shape[1]
         electrodes = electrodes.reshape(b, num_electrodes, 13, self.num_pe_electrodes, electrodes.shape[-1]).float()
         signals = signals.reshape(b, num_electrodes, 13).float()
-        # if self.training:
-        #     check_not_zero = False
-        #     while not check_not_zero:
-        #         dropout_electrodes = torch.bernoulli(torch.full((num_electrodes,), 1-self.prob_dropout)).bool()
-        #         num_electrodes = torch.sum(dropout_electrodes)
-        #         check_not_zero = num_electrodes>0
-        #     # Number of times to shuffle
-        #     num_shuffles = electrodes.shape[0]
-        #     # List to store shuffled tensors
-        #     shuffled_tensors = []
-        #     # Loop over the number of shuffles
-        #     for _ in range(num_shuffles):
-        #         # Generate random permutation of indices
-        #         perm_indices = torch.randperm(dropout_electrodes.size(0))
-        #         # Shuffle the tensor using the random permutation
-        #         shuffled_tensor = dropout_electrodes[perm_indices]
-        #         # Append the shuffled tensor to the list
-        #         shuffled_tensors.append(shuffled_tensor)
-        #     # Concatenate the permuted tensors along the specified dimension (0 for concatenating along rows)
-        #     dropout_electrodes = torch.stack(shuffled_tensors, dim=0)
-        #     electrodes = electrodes[dropout_electrodes].reshape(b, num_electrodes, 13, self.num_pe_electrodes, electrodes.shape[-1])
-        #     signals = signals[dropout_electrodes].reshape(b, num_electrodes, 13)
 
         # SIGNAL EMBEDDING
         signals_emb = torch.arange(int(4*16*13), device=signals.device).reshape(1, num_electrodes, 13).repeat(b, 1, 1).type(torch.int64)
         signals_emb = self.signal_embeddings(signals_emb)
+
+        if training and self.prob_dropout > 0.0:
+            check_not_zero = False
+            while not check_not_zero:
+                dropout_electrodes = torch.bernoulli(torch.full((num_electrodes,), 1-self.prob_dropout)).bool()
+                num_electrodes = torch.sum(dropout_electrodes)
+                check_not_zero = num_electrodes>0
+            # Number of times to shuffle
+            num_shuffles = electrodes.shape[0]
+            # List to store shuffled tensors
+            shuffled_tensors = []
+            # Loop over the number of shuffles
+            for _ in range(num_shuffles):
+                # Generate random permutation of indices
+                perm_indices = torch.randperm(dropout_electrodes.size(0))
+                # Shuffle the tensor using the random permutation
+                shuffled_tensor = dropout_electrodes[perm_indices]
+                # Append the shuffled tensor to the list
+                shuffled_tensors.append(shuffled_tensor)
+            # Concatenate the permuted tensors along the specified dimension (0 for concatenating along rows)
+            dropout_electrodes = torch.stack(shuffled_tensors, dim=0)
+            electrodes = electrodes[dropout_electrodes].reshape(b, num_electrodes, 13, self.num_pe_electrodes, electrodes.shape[-1])
+            signals = signals[dropout_electrodes].reshape(b, num_electrodes, 13)
+            signals_emb = signals_emb[dropout_electrodes].reshape(b, num_electrodes, 13, signals_emb.shape[-1])
         signals = signals.unsqueeze(-1) + signals_emb
         signals = signals.reshape(b, num_electrodes, 13, -1)
         signals = self.signal_linear_embedding(signals)
         
-        electrodes = positional_encoding(electrodes, num_encoding_functions=self.num_encoding_functions).reshape(b, num_electrodes, 13, -1)
+        electrodes = positional_encoding(electrodes, num_encoding_functions=self.num_encoding_functions_electrodes).reshape(b, num_electrodes, 13, -1)
         signals = electrodes + signals#.unsqueeze(-1)
         if self.attention_on == 'sequence':
             signals = signals.reshape(b,num_electrodes,-1)
@@ -152,7 +155,7 @@ class AttentionModel(nn.Module):
             signals = torch.cat([signals, mask_feat], dim=2)
             signals = self.linear_mask_add(signals)
         # point-signals attention
-        xy = positional_encoding(xy, num_encoding_functions=self.num_encoding_functions)
+        xy = positional_encoding(xy, num_encoding_functions=self.num_encoding_functions_points)
         xy = xy.reshape(b, n, xy.shape[-1]) # bxnx(3x2xnum_encoding_functions)
         xy = self.linear_points(xy)
         xy = self.linear_points_ln(xy)
@@ -160,8 +163,11 @@ class AttentionModel(nn.Module):
             xy_emb = torch.nn.functional.dropout(self.tissue_embedding(tissue).reshape(xy.shape) * 0.1, p=self.emb_dropout, training=self.training)
             xy = xy + xy_emb
             xy = self.point_self_attention(xy)
+        attention_weights = []
         for attention in self.attention:
-            xy = attention(signals, xy)
+            xy, w = attention(signals, xy, return_weights=return_attention_weights)
+            if return_attention_weights:
+                attention_weights.append(w.detach().cpu())
         for i, linear_out in enumerate(self.linear_out):
             xy = linear_out(xy)
             xy = nn.functional.relu(xy) # conductivity is > 0
@@ -170,6 +176,8 @@ class AttentionModel(nn.Module):
             xy = xy.reshape(xy.shape[0], int(np.sqrt(n)), int(np.sqrt(n)), -1).moveaxis(-1, 1)
             xy = self.cnn(xy)
         xy = xy.reshape(xy.shape[0], -1, 1)
+        if return_attention_weights:
+            return xy, attention_weights
         return xy
     
 class AttentionModelExperimental(nn.Module):

@@ -29,7 +29,7 @@ def training(model, train_dataset, val_dataset, epochs, batch_size_train, lr, de
         epoch_loss_train, epoch_lung_loss_train, model, optimizer = training_step(model, train_dataloader, optimizer, lr, loss, device, epoch, loss_lung_multiplier, model_3d)
         scheduler.step()
         torch.cuda.empty_cache()
-        if epoch % 20 == 0: # and epoch!=0:
+        if epoch % 1 == 0: # and epoch!=0:
             epoch_loss_val, epoch_lung_loss_val = validation_step(model, val_dataloader, loss, device, cmap, 
                                                                 point_levels_3d=point_levels_3d, model_3d=model_3d)
         pbar.set_description(f"Epoch: {epoch+1}, Train Loss: {epoch_loss_train:.5f}, Val Loss: {epoch_loss_val:.5f},  Train Lung Loss: {epoch_lung_loss_train:.5f}, Val Lung Loss: {epoch_lung_loss_val:.5f}")

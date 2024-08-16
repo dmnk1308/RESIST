@@ -10,6 +10,7 @@ import torch
 import pyvista as pv
 import pandas as pd
 from data_processing.mesh_to_array import mesh_to_image, convert_to_vtk
+from scipy.ndimage import binary_erosion
 
 def rescale_img(img, coords=None, resolution=512):
     '''
@@ -314,3 +315,15 @@ def sort_filenames(filenames):
     list of str: The sorted list of filenames.
     """
     return sorted(filenames, key=extract_keys)
+
+def erode_lung_masks(targets, conductivity=None, structure=30):
+    if conductivity is None:
+        lung_masks = (targets <= 0.2) * (targets >= 0.05)
+    else:
+        lung_masks = targets == conductivity
+    lung_masks = lung_masks.squeeze()
+    if isinstance(lung_masks, torch.Tensor):
+        lung_masks = lung_masks.numpy()
+    lung_masks = [binary_erosion(lung_mask, structure=np.ones((structure,structure))).astype(np.uint8) for lung_mask in lung_masks]
+    lung_masks = torch.tensor(np.array(lung_masks))
+    return lung_masks

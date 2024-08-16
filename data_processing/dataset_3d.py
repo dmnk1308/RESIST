@@ -7,7 +7,7 @@ from tqdm import tqdm
 import cv2
 import numpy as np
 from data_processing.preprocessing import load_signals, load_body_shape, load_targets_electrodes_points
-from data_processing.helper import sort_filenames
+from data_processing.helper import sort_filenames, erode_lung_masks
 from scipy.spatial.transform import Rotation as R
 import torchvision.transforms.functional as TF
 from utils.helper import set_seeds
@@ -149,7 +149,8 @@ def write_npz_case_3d(case, raw_data_folder="data/raw", processed_data_folder="d
     for s, t, r in zip(signal, targets, rhos):
         # for now only save 5, 10, 15, 20 rho
         if r in [5, 10, 15, 20]:
-            np.savez_compressed(os.path.join(case_dir_processed,case+'_'+str(r)+'.npz'), signals=s, targets=t, masks=mask, electrodes=electrode, points=points, tissue=tissue)
+            eroded_lung_mask = erode_lung_masks(t)
+            np.savez_compressed(os.path.join(case_dir_processed,case+'_'+str(r)+'.npz'), signals=s, targets=t, masks=eroded_lung_mask, electrodes=electrode, points=points, tissue=tissue)
 
 def make_dataset_3d(cases, processed_data_folder="data/processed", base_dir='',resolution=512, 
                  n_sample_points=10000, return_electrodes=True, point_levels_3d=9,

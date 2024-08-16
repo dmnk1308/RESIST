@@ -4,6 +4,7 @@ model:
   num_attention_blocks: 5
   num_encoding_functions_electrodes: 10
   num_encoding_functions_points: 10
+  pos_encoding: False
   attention_dim: 256
   dropout_attention: 0.2
   num_electrodes: 16
@@ -23,10 +24,10 @@ model:
   prob_dropout: 0.1
 
 training:
-  epochs: 600
+  epochs: 200
   batch_size_train: 4
   learning_rate: 0.0001
-  loss_lung_multiplier: 8
+  loss_lung_multiplier: 16
   sample_points: 40000
   device: cuda
 

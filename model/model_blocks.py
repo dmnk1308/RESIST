@@ -38,15 +38,14 @@ class SelfAttentionBlock(nn.Module):
                  heads=8,
                  dropout=0.1):
         super(SelfAttentionBlock, self).__init__()
-        
         self.multi_head = nn.MultiheadAttention(dim_kqv, num_heads=heads, dropout=dropout, batch_first=True)    
         self.linear = FeedForward(dim_kqv, dropout=dropout)
         self.layer_norm1 = nn.LayerNorm(dim_kqv)
         self.layer_norm2 = nn.LayerNorm(dim_kqv)
 
     def forward(self, x):
-        x_tmp = self.layer_norm1(x)
-        x = self.multi_head(x_tmp, x_tmp, x_tmp, need_weights=False)[0] + x
+        x = self.layer_norm1(x)
+        x = self.multi_head(x, x, x, need_weights=False)[0] + x
         x = self.linear(self.layer_norm2(x)) + x
         return x
 

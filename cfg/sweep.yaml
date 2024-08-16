@@ -5,20 +5,10 @@ metric:
   goal: minimize
   name: val_lung_loss
 parameters:
-  learning.model.num_attention_blocks: 
-    values: [5, 6]
-  learning.model.attention_dim: 
-    values: [128, 256]
-  learning.model.dropout_attention:
-    values: [0.1, 0.2]
-  learning.training.epochs:
-    values: [600]
-  learning.model.linear_output_channels:
-    values: [128,256]
-  learning.model.prob_dropout:
-    values: [0., 0.1]
-  learning.model.signal_emb:
-    values: [4, 8]
+  learning.model.num_encoding_functions_electrodes:
+    values: [6, 8, 10, 12]
+  learning.model.num_encoding_functions_points:
+    values: [6, 8, 10, 12]
 
 command:
   - ${env}

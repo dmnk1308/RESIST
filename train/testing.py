@@ -13,7 +13,7 @@ import wandb
 import sys
 sys.path.append('../')
 from utils.helper import log_heatmaps, make_cmap
-from scipy.ndimage import binary_erosion
+from data_processing.helper import erode_lung_masks
 
 def testing(model, data, batch_size, device, wandb_log=True, point_levels_3d=6, model_3d=False, point_chunks=8, electrode_level_only=False, return_attention_weights=False, noise=None, return_loss=False):
     model.eval()
@@ -64,10 +64,7 @@ def testing(model, data, batch_size, device, wandb_log=True, point_levels_3d=6, 
         targets = targets.reshape(-1, resolution, resolution, 1)
         preds = preds.reshape(-1, resolution, resolution, 1)
         test_loss = loss(preds, targets)
-        lung_masks = (targets <= 0.2) * (targets >= 0.05)
-        lung_masks = lung_masks.squeeze().numpy()
-        lung_masks = [binary_erosion(lung_mask, structure=np.ones((30,30))).astype(np.uint8) for lung_mask in lung_masks]
-        lung_masks = torch.tensor(lung_masks)
+        lung_masks = erode_lung_masks(targets)
 
         if torch.sum(lung_masks) > 0:
             test_lung_loss = test_loss[lung_masks].mean()

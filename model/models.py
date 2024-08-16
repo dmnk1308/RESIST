@@ -11,7 +11,7 @@ class AttentionModel(nn.Module):
                  attention_dim=128, num_linear_output_blocks=4, cnn_in_channels=16, cnn_out_channels=32, linear_output_channels=512, 
                  prob_dropout=1., emb_dropout=0.2, training=True, use_cnn=True, use_tissue_embedding=False, num_tissue_classes=6, 
                  use_body_only=True, use_body_mask=False, body_mask_channels=4, body_mask_blocks=5, body_mask_final_channels=6,
-                 dropout_attention=0.1, model_3d=False, signal_emb=4, attention_on='signal',
+                 dropout_attention=0.1, model_3d=False, signal_emb=4, pos_encoding=True, attention_on='signal',
                  **kwargs):
         super(AttentionModel, self).__init__()
         self.num_encoding_functions_electrodes = num_encoding_functions_electrodes
@@ -19,6 +19,7 @@ class AttentionModel(nn.Module):
         self.attention_on = attention_on
         self.num_electrodes = num_electrodes
         self.num_pe_electrodes = 4  
+        self.pos_encoding = pos_encoding
         if model_3d:  
             # input dimension for linear processing before self attention 
             if attention_on == 'sequence':
@@ -138,9 +139,10 @@ class AttentionModel(nn.Module):
         signals = signals.unsqueeze(-1) + signals_emb
         signals = signals.reshape(b, num_electrodes, 13, -1)
         signals = self.signal_linear_embedding(signals)
-        
-        electrodes = positional_encoding(electrodes, num_encoding_functions=self.num_encoding_functions_electrodes).reshape(b, num_electrodes, 13, -1)
-        signals = electrodes + signals#.unsqueeze(-1)
+
+        if self.pos_encoding:        
+            electrodes = positional_encoding(electrodes, num_encoding_functions=self.num_encoding_functions_electrodes).reshape(b, num_electrodes, 13, -1)
+            signals = electrodes + signals#.unsqueeze(-1)
         if self.attention_on == 'sequence':
             signals = signals.reshape(b,num_electrodes,-1)
         elif self.attention_on == 'signal':

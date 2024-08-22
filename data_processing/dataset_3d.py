@@ -142,7 +142,7 @@ def write_npz_case_3d(case, raw_data_folder="data/raw", processed_data_folder="d
     electrode = combine_electrode_positions(electrode) 
     
     # load body mask
-    mask = load_body_shape(dir=case_dir, density=0.01)
+    # mask = load_body_shape(dir=case_dir, density=0.01)
 
     # make directory for each case
     os.makedirs(os.path.join(case_dir_processed), exist_ok=True)
@@ -320,10 +320,10 @@ class EITData3D(Dataset):
         signal =  torch.from_numpy(file['signals']).reshape(-1, 4, 16, 13)
         signal = (signal - self.train_mean) / self.train_std
         signal = signal.reshape(4, -1)
-        if self.use_body_mask:
-            mask =  torch.from_numpy(file['masks'])
-        else:
-            mask = torch.zeros((1,1))
+        # if self.use_body_mask:
+        mask =  torch.from_numpy(file['masks'])
+        # else:
+        #     mask = torch.zeros((1,1))
         electrode =  torch.from_numpy(file['electrodes'])
         # electrode = (electrode - self.points_min) / (self.points_max - self.points_min) * 2 - 1
         electrode[:,:,:,:,:2] = (electrode[:,:,:,:,:2] - self.points_min) / (self.points_max - self.points_min) * 2 - 1
@@ -338,12 +338,26 @@ class EITData3D(Dataset):
                 points, electrode = self._random_rotation(points, electrode)
             if self.apply_translation:
                 points, electrode = self._random_translation(points, electrode)
-            # # filter out points that are outside of [-1,1]
-            # filter_idx = torch.any(torch.logical_or(points > 1, points < -1), dim=1)
-            # points = points[~filter_idx]
-            # target = target[~filter_idx]
-            # tissue = tissue[~filter_idx]
             if self.apply_subsampling:
+                # # ensure at least 50% of samples are lung points
+                # lung_mask = (target >= 0.05) * (target <= 0.5)
+                # lung_n_samples = max(int(0.2 * self.n_sample_points), 1)  
+                # nolung_n_samples = self.n_sample_points - lung_n_samples
+
+                # # get indices of 1s and 0s
+                # indices_of_ones = torch.nonzero(lung_mask == 1).squeeze()
+                # indices_of_zeros = torch.nonzero(lung_mask == 0).squeeze()
+
+                # # randomly sample the indices
+                # sampled_ones = indices_of_ones[torch.randperm(indices_of_ones.size(0))[:lung_n_samples]]
+                # sampled_zeros = indices_of_zeros[torch.randperm(indices_of_zeros.size(0))[:nolung_n_samples]]
+
+                # # combine sampled ones and zeros
+                # sample_indices = torch.cat([sampled_ones, sampled_zeros])
+
+                # # shuffle the final indices
+                # sample_indices = sample_indices[torch.randperm(sample_indices.size(0))][:,0]
+
                 sample_indices = torch.multinomial(torch.ones(target.flatten().shape).float(), self.n_sample_points, replacement=False)
             else:
                 sample_indices = torch.arange(target.shape[0])

@@ -148,7 +148,7 @@ class AttentionModel(nn.Module):
         elif self.attention_on == 'signal':
             signals = signals.reshape(b, int(num_electrodes*13), -1)
         signals = self.linear_signals(signals)
-        signals = self.linear_signals_ln(signals)
+        # signals = self.linear_signals_ln(signals)
         signals = self.self_attention(signals)
 
         if self.use_body_mask:

@@ -76,17 +76,23 @@ def pred_postprocess(preds, targets, resolution=512, nlevel=4, nres=4, cond_valu
     lung_mask_shrunken = lung_mask_shrunken.reshape(-1, nres, nlevel, resolution, resolution)
     return preds.numpy(), targets.numpy(), lung_mask_shrunken.numpy()
 
-def plot_lung_contour(img, mask, cond_value, ax):
+def plot_lung_contour(img, mask, cond_value, ax, show_std=False):
     contours = measure.find_contours(mask, level=0.5)
     for contour in contours:
         ax.plot(contour[:, 1], contour[:, 0], linewidth=2, color='red')
     # Get the coordinates of the mask
     center_x, center_y = mask.shape[1] / 2, mask.shape[0]
     # Compute the average pixel value of the rectangle
-    average_pixel_value = np.mean(img[mask==1])
+    # error = np.sum((img[mask==1]-cond_value)**2)/np.sum(mask==1)
+    error = np.mean(np.abs(img[mask==1]-cond_value))
+    std = (img[mask==1]-cond_value).std()
     # Annotate the rectangle with the average pixel value
-    ax.text(center_x, center_y, f'Error: \n{(np.round(cond_value-average_pixel_value, 4)):.4f}',
-            color='white', ha='center', va='center', bbox=dict(facecolor='red', alpha=0.8))
+    if show_std:
+        ax.text(center_x, center_y, f'Error: {(np.round(error, 4)):.4f}\nStd: {(np.round(std, 4)):.4f}',
+                color='white', ha='center', va='top', bbox=dict(facecolor='red', alpha=0.8))
+    else:
+        ax.text(center_x, center_y, f'Error: {(np.round(error, 4)):.4f}',
+        color='white', ha='center', va='top', bbox=dict(facecolor='red', alpha=0.8))
     
 def generate_cosine_function(max_val, min_val, num_points):
     """
@@ -143,11 +149,11 @@ def sample_noise(snr_low, snr_high, nres=4):
     noise = get_noise(snr_cycle)
     return noise
 
-def load_model(path):
+def load_model(path, device='cuda'):
     cfg = load_cfg(path)
     cfg.inference_path = path
     model = hydra.utils.instantiate(cfg.learning.model, model_3d=cfg.data.model_3d)
-    model.load_state_dict(torch.load(os.path.join(path,'model_lung.pt'), map_location=cfg.learning.training.device)['model_state_dict'], strict=False)
+    model.load_state_dict(torch.load(os.path.join(path,'model_lung.pt'), map_location=device)['model_state_dict'], strict=False)
     return model, cfg
 
 def load_cfg(path):

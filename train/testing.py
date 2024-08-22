@@ -11,11 +11,13 @@ from tqdm import tqdm
 from train.metrics import closest_class
 import wandb
 import sys
+import copy
 sys.path.append('../')
 from utils.helper import log_heatmaps, make_cmap
 from data_processing.helper import erode_lung_masks
 
-def testing(model, data, batch_size, device, wandb_log=True, point_levels_3d=6, model_3d=False, point_chunks=8, electrode_level_only=False, return_attention_weights=False, noise=None, return_loss=False):
+def testing(model, data, batch_size, device, wandb_log=True, point_levels_3d=6, model_3d=False, point_chunks=8, electrode_level_only=False, 
+            return_attention_weights=False, noise=None, electrode_noise=None, return_loss=False):
     model.eval()
     loss = nn.MSELoss(reduction='none')
     model.eval()
@@ -37,6 +39,13 @@ def testing(model, data, batch_size, device, wandb_log=True, point_levels_3d=6, 
                 target = target[:,:,electrode_levels].reshape(dataloader.batch_size, -1, 1)
             if noise is not None:
                 signals = signals + noise[i].unsqueeze(0)
+            if electrode_noise is not None:
+                electrodes_copy = copy.deepcopy(electrodes).reshape(-1,3).numpy()
+                unique_electrodes = copy.deepcopy(electrodes[:,:,0,0,:].reshape(-1,3).numpy())
+                for e in unique_electrodes:
+                    idx = np.all(np.equal(e, electrodes_copy).astype(bool), axis=1)
+                    electrodes_copy[idx] += np.random.randn(1,3)*electrode_noise
+                electrodes = torch.from_numpy(electrodes_copy.reshape(electrodes.shape))
             points = points.reshape(dataloader.batch_size, -1, 3)
             points_batched = points.chunk(point_chunks, dim=1)
             target = target.reshape(dataloader.batch_size, -1, 1)
@@ -94,16 +103,16 @@ def testing(model, data, batch_size, device, wandb_log=True, point_levels_3d=6, 
         test_loss = np.nan
         test_lung_loss = np.nan
         return (targets, preds, attention_weights_list)
+    print('MSE Test Loss: ', test_loss,
+            'MSE Test Lung Loss: ', test_lung_loss,
+            'RMSE Test Loss: ', np.sqrt(test_loss),
+            'RMSE Test Lung Loss: ', np.sqrt(test_lung_loss))
     if wandb_log:
-        print('Test Loss: ', test_loss)
-        print('Test Lung Loss: ', test_lung_loss)
         wandb.log({"test_loss": test_loss})    
         wandb.log({"test_lung_loss": test_lung_loss})
         # log qualitative results
         log_heatmaps(targets, preds, n_levels=point_levels_3d, cmap=cmap)
     else:
-        print('Test Loss: ', test_loss)
-        print('Test Lung Loss: ', test_lung_loss)
         if return_loss:
             return (test_loss, test_lung_loss)
         else:

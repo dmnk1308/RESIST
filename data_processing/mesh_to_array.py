@@ -61,10 +61,7 @@ def mesh_to_image(mesh, resolution=512, z_pos=None, box_size=None, return_mask=F
     if box_size==None:
         z_length = z_max-z_min
         box_size = 0.005*z_length
-        # print(f'box_size set to {box_size}.')
-    # if box_size < point_range_3d:
-    #     Warning(f'box_size is too small. box_size set to 1.5*{point_range_3d}.')
-    #     box_size = 1.5*point_range_3d
+
     # rename cell data
     celldata_name = mesh.cell_data.keys()[0]
     mesh.cell_data['PartId'] = mesh.cell_data[celldata_name]

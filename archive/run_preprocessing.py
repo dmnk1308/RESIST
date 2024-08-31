@@ -3,7 +3,7 @@ import sys
 sys.path.append('../..')
 sys.path.append('../')
 sys.path.append('./')
-from data_processing.dataset import load_dataset
+from archive.dataset import load_dataset
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import fnmatch

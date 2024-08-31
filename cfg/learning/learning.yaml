@@ -4,31 +4,24 @@ model:
   num_attention_blocks: 5
   num_encoding_functions_electrodes: 10
   num_encoding_functions_points: 10
-  pos_encoding: False
+  pos_encoding: True
   attention_dim: 256
   dropout_attention: 0.2
   num_electrodes: 16
   num_linear_output_blocks: 3
   linear_output_channels: 256
-  use_cnn: False
   use_tissue_embedding: False   # use masks per query point for all tissue types
   use_tissue_body_only: False   # use masks per query point for body tissue only
-  use_body_mask: False           # use 3d body voxels
-  body_mask_blocks: 6           # e.g. 3: input 256,256,256 -> output body_mask_final_channels,64,64,64
-  body_mask_channels: 8
-  body_mask_final_channels: 8
   emb_dropout: 0.
-  cnn_in_channels: 16
-  cnn_out_channels: 32
   signal_emb: 8
   prob_dropout: 0.1
 
 training:
-  epochs: 200
+  epochs: 100
   batch_size_train: 4
-  learning_rate: 0.0001
-  loss_lung_multiplier: 16
-  sample_points: 40000
+  learning_rate: 0.00005
+  loss_lung_multiplier: 8 #8
+  sample_points: 100000
   device: cuda
 
 validation:

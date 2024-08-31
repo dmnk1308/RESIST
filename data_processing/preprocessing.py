@@ -27,28 +27,30 @@ def load_signals(return_square=True, dir=None):
     
     for case_signal_file in case_signals_files:
         try:
-            if case_signal_file.endswith('.get'):
-                signal = read_get(signal_dir + '/' + case_signal_file)
-            elif case_signal_file.endswith('.npy'):
-                signal = np.load(signal_dir + '/' + case_signal_file)
-            else:
-                print(f'Check signal files for {case_signal_file}!')
-            if return_square == True:
-                signal_matrix = np.zeros((16,16))
-                for i in range(16):
-                    to_allocate = signal[i*13:(i+1)*13]
-                    number_values_back = 16 - (i + 2)
-                    number_values_back = 13 if number_values_back > 13 else number_values_back
-                    number_values_back = 0 if number_values_back < 0 else number_values_back 
-                    number_values_front = 13-number_values_back
-                    signal_matrix[i, i+2:i+2+number_values_back] = to_allocate[:number_values_back]
-                    signal_matrix[i, :number_values_front] = to_allocate[number_values_back:]
-                signal = signal_matrix
-            else:
-                signal = signal.reshape(16,13)
-            rhos.append(int(case_signal_file.split('_')[2].split('.')[0]))
-            level.append(int(case_signal_file.split('_')[1]))
-            case_signal.append(signal)
+### ONLY USE INTEGER SIGNALS! REMOVE LATER! ###
+            if case_signal_file.count('_') == 2:
+                if case_signal_file.endswith('.get'):
+                    signal = read_get(signal_dir + '/' + case_signal_file)
+                elif case_signal_file.endswith('.npy'):
+                    signal = np.load(signal_dir + '/' + case_signal_file)
+                else:
+                    print(f'Check signal files for {case_signal_file}!')
+                if return_square == True:
+                    signal_matrix = np.zeros((16,16))
+                    for i in range(16):
+                        to_allocate = signal[i*13:(i+1)*13]
+                        number_values_back = 16 - (i + 2)
+                        number_values_back = 13 if number_values_back > 13 else number_values_back
+                        number_values_back = 0 if number_values_back < 0 else number_values_back 
+                        number_values_front = 13-number_values_back
+                        signal_matrix[i, i+2:i+2+number_values_back] = to_allocate[:number_values_back]
+                        signal_matrix[i, :number_values_front] = to_allocate[number_values_back:]
+                    signal = signal_matrix
+                else:
+                    signal = signal.reshape(16,13)
+                rhos.append(int(case_signal_file.split('_')[2].split('.')[0]))
+                level.append(int(case_signal_file.split('_')[1]))
+                case_signal.append(signal)
         except:
             print(case_signal_file, 'can not be loaded.')
             
@@ -74,7 +76,7 @@ def load_tomograms(dir=None):
     case_tomograms = np.stack(case_tomograms,0)
     return case_tomograms
 
-def load_targets_electrodes_points(dir, resolution=128, mesh_from_nas=True, all_signals=False, point_levels_3d=8):
+def load_targets_electrodes_points(dir, resolution=128, mesh_from_nas=True, point_levels_3d=8):
     ''' 
     Returns the mask of the body shape and the coordinates of the electrodes.
     '''
@@ -125,13 +127,13 @@ def load_targets_electrodes_points(dir, resolution=128, mesh_from_nas=True, all_
     electrodes = electrodes.reshape(-1, 16, 3)
 
     z_positions = [np.mean(e[:,2]) for e in electrodes]
-    if all_signals:
-        z_positions = create_equal_distant_array(n=point_levels_3d, value1=z_positions[0], value2=z_positions[1], value3=z_positions[2], value4=z_positions[3])
+    z_positions = create_equal_distant_array(n=point_levels_3d, value1=z_positions[0], value2=z_positions[1], value3=z_positions[2], value4=z_positions[3])
     mesh_arrays = [mesh_to_image(msh, z_pos=z, resolution=resolution) for z in z_positions] 
     points = [point[1] for point in mesh_arrays] # shape: (point_levels_3d * 512 * 512, 3)
     center_vector = mesh_arrays[0][2]
     # use mean z_position as center point along z-axis
     center_vector[2] = np.mean(z_positions)
+    center_vector = electrodes[0,0]
     targets = [target[0] for target in mesh_arrays]
     targets = np.stack(targets, axis=0)
     points = np.stack(points, axis=0) - center_vector

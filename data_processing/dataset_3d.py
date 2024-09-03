@@ -134,6 +134,9 @@ def make_npz_3d_multi(
     point_levels_3d=9,
     num_workers="all",
 ):
+    '''
+    Write .npz files from raw data for all cases in parallel.
+    '''
     # use all cpu cores if not specified
     num_workers = os.cpu_count() if num_workers == "all" else num_workers
     print(f"Using {num_workers} workers.")
@@ -175,6 +178,9 @@ def make_npz_3d(
     overwrite_npz=False,
     point_levels_3d=8,
 ):
+    '''
+    Write .npz files from raw data for all cases
+    '''
     with tqdm(cases) as pbar:
         for case in pbar:
             pbar.set_description(f"Processing {case}.")
@@ -204,6 +210,9 @@ def write_npz_case_3d(
     point_levels_3d=9,
     multi=False,
 ):
+    '''
+    Makes individual .npz files from raw data
+    '''
     # how many levels and how many measurements per level do we have?
     if isinstance(case, int):
         case = "case_" + str(case)
@@ -277,6 +286,9 @@ def make_dataset_3d(
     level_used=4,
     include_resistivities=[5, 10, 15, 20]
 ):
+    '''
+    Generates training, validation and test datasets from .npz files
+    '''
     set_seeds(123)
 
     # split into training, validation and test
@@ -463,6 +475,9 @@ class EITData3D(Dataset):
         level_used=4,
         include_resistivities=[5, 10, 15, 20]
     ):
+        '''
+        Dataset class for 3D EIT data
+        '''
         self.resolution = resolution
         # use only the middle slice if 3d points are processed
         self.n_sample_points = n_sample_points
@@ -570,18 +585,10 @@ class EITData3D(Dataset):
         electrode = (electrode - self.points_min) / (
             self.points_max - self.points_min
         ) * 2 - 1
-        # electrode[:,:,:,:,:2] = (electrode[:,:,:,:,:2] - self.points_min) / (self.points_max - self.points_min) * 2 - 1
-        # electrode[:,:,:,:,0] = (electrode[:,:,:,:,0] - self.points_min_x) / (self.points_max_x - self.points_min_x) * 2 - 1
-        # electrode[:,:,:,:,1] = (electrode[:,:,:,:,1] - self.points_min_y) / (self.points_max_y - self.points_min_y) * 2 - 1
-        # electrode[:,:,:,:,2] = (electrode[:,:,:,:,2] - self.points_min_z) / (self.points_max_z - self.points_min_z) * 2 - 1
         points = torch.from_numpy(file["points"]).reshape(-1, 3)
         points = (points - self.points_min) / (
             self.points_max - self.points_min
         ) * 2 - 1
-        # points[:,:2] = (points[:,:2] - self.points_min) / (self.points_max - self.points_min) * 2 - 1
-        # points[:,0] = (points[:,0] - self.points_min_x) / (self.points_max_x - self.points_min_x) * 2 - 1
-        # points[:,1] = (points[:,1] - self.points_min_y) / (self.points_max_y - self.points_min_y) * 2 - 1
-        # points[:,2] = (points[:,2] - self.points_min_z) / (self.points_max_z - self.points_min_z) * 2 - 1
 
         if self.training:
             if self.apply_rotation:

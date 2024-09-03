@@ -4,11 +4,17 @@ import numpy as np
 import os
 
 def convert_to_vtk(nas_file_path):
+    '''
+    Converts a .nas file to a .vtk file
+    '''
     mesh = meshio.read(nas_file_path)
     vtk_file_path = nas_file_path.split('.nas')[0]+'.vtk'
     meshio.write(vtk_file_path, mesh)
 
 def mesh_to_voxels(mesh: pv.PolyData, density:float):
+    '''
+    returns a numpy boolean mask of voxels from mesh
+    '''
     x_min, x_max, y_min, y_max, z_min, z_max = mesh.bounds
     x = np.arange(x_min, x_max, density)
     y = np.arange(y_min, y_max, density)

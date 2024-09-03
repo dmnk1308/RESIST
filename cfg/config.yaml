@@ -5,7 +5,7 @@ defaults:
 - hydra: hydra
 
 inference: False
-inference_path: /home/nibdombe/deep_eit/outputs/2024-07-04/10-29-27
+inference_path: outputs/2024-07-04/10-29-27
 segmentation_model: False
 wandb: 'online' # 'disabled', 'online', 'offline'
 

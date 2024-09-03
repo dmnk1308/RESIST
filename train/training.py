@@ -24,6 +24,9 @@ def training(
     point_levels_3d=9,
     output_dir=None,
 ):
+    '''
+    Training routine for RESIST with validation step.
+    '''
     print("Initializing Dataloader...", end=" ")
     train_dataloader = DataLoader(
         train_dataset, batch_size=batch_size_train, shuffle=True

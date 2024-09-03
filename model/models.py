@@ -55,6 +55,9 @@ class AttentionModel(nn.Module):
         attention_on="signal",
         **kwargs
     ):
+        '''
+        RESIST model
+        '''
         super(AttentionModel, self).__init__()
         self.num_encoding_functions_electrodes = num_encoding_functions_electrodes
         self.num_encoding_functions_points = num_encoding_functions_points

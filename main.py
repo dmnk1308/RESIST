@@ -46,7 +46,6 @@ def main(cfg: DictConfig, inference=False):
         include_resistivities=cfg.data.include_resistivities
 
     )
-    # name = f'{cfg.data.translation_x}_{cfg.data.translation_y}_{cfg.data.translation_z}_{cfg.learning.model.prob_dropout}_{cfg.learning.model.signals_dim}_{cfg.learning.model.num_attention_blocks}_{cfg.learning.model.nodes_resistance_network}'
     run = wandb.init(
         project="deep_eit",
         config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),

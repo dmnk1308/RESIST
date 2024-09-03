@@ -78,7 +78,7 @@ def load_tomograms(dir=None):
 
 def load_targets_electrodes_points(dir, resolution=128, mesh_from_nas=True, point_levels_3d=8):
     ''' 
-    Returns the mask of the body shape and the coordinates of the electrodes.
+    Returns the targets (categories), corresponding points andcoordinates of the electrodes.
     '''
     # load raw stl file 
     if mesh_from_nas:

@@ -6,3 +6,4 @@ outputs*
 singularity
 logs*
 wandb*
+figures

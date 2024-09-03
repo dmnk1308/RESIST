@@ -13,6 +13,9 @@ import re
 def log_heatmaps(
     targets, preds, n_examples=20, n_levels=4, cmap="coolwarm", resolution=512
 ):
+    '''
+    Plots heatmaps for targets and preds for n_examples over n_levels level. 
+    '''
     # log qualitative results
     targets_case = (
         targets.detach()
@@ -46,6 +49,9 @@ def log_heatmaps(
 
 
 def make_cmap():
+    '''
+    Defines a colormap with a smooth gradient in the lung conductivity range.
+    '''
     # Define the colors and their positions in the colormap
     colors = [
         (1.0, 1.0, 1),  # white
@@ -64,6 +70,9 @@ def make_cmap():
 
 
 def get_all_cases(cfg: DictConfig, base_dir="..", use_raw=False):
+    '''
+    Loads all cases available in the data set.
+    '''
     if cfg.data.cases == "all":
         if use_raw:
             cases = os.listdir(os.path.join(base_dir, cfg.data.raw_data_folder))
@@ -98,6 +107,9 @@ def get_all_cases(cfg: DictConfig, base_dir="..", use_raw=False):
 
 
 def set_seeds(seed=123):
+    '''
+    Sets seeds for all relevant libraries.
+    '''
     random.seed(seed)
     torch.random.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)

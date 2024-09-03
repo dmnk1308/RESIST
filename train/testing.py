@@ -56,7 +56,7 @@ def testing(
                     dataloader.batch_size, -1, 1
                 )
             if noise is not None:
-                signals = signals + noise[i].unsqueeze(0)
+                signals = signals + noise[i].unsqueeze(0).reshape(signals.shape)
             if electrode_noise is not None:
                 electrodes_copy = copy.deepcopy(electrodes).reshape(-1, 3).numpy()
                 unique_electrodes = copy.deepcopy(

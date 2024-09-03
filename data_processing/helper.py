@@ -113,98 +113,6 @@ def reduce_mask(mask):
     return mask
 
 
-def get_mask_target_electrodes(
-    dir,
-    resolution=128,
-    electrode_resolution=512,
-    mesh_from_nas=True,
-    all_signals=False,
-    points_3d=False,
-    point_levels_3d=8,
-    point_range_3d=0.05,
-):
-    """
-    Returns the mask of the body shape and the coordinates of the electrodes.
-    """
-    # load raw stl file
-    if mesh_from_nas:
-        file_path = os.path.join(dir, "shape")
-        shapes = os.listdir(file_path)
-        shapes = [shape for shape in shapes if fnmatch.fnmatch(shape, "*.vtk")]
-        if len(shapes) == 0:
-            print(f"No .vtk file found in {dir}. Search .nas file", end="...")
-            shapes = os.listdir(file_path)
-            shapes = [shape for shape in shapes if fnmatch.fnmatch(shape, "*.nas")]
-            if len(shapes) == 0:
-                raise ValueError(f"No shape file found in {file_path}")
-            file_path = os.path.join(file_path, shapes[0])
-            convert_to_vtk(file_path)
-            file_path = file_path.split(".nas")[0] + ".vtk"
-        else:
-            file_path = os.path.join(file_path, shapes[0])
-        msh = pv.read(file_path)
-        bounds = msh.bounds
-        xlim = bounds[0:2]
-        ylim = bounds[2:4]
-        zlim = bounds[4:6]
-    else:
-        file_path = os.path.join(dir, "shape/body_only.stl")
-        if os.path.exists(file_path):
-            msh = Mesh(file_path)
-        else:
-            file_path = os.path.join(dir, "shape/background.stl")
-            msh = Mesh(file_path)
-        zlim = msh.zbounds()
-        xlim = msh.xbounds()
-        ylim = msh.ybounds()
-
-    # load raw electrode coordinates
-    electrodes_from_mat = os.path.exists(os.path.join(dir, "electrodes/electrodes.mat"))
-
-    if electrodes_from_mat:
-        electrodes_path = os.path.join(dir, "electrodes/electrodes.mat")
-        mat = scipy.io.loadmat(electrodes_path)
-        key = list(mat.keys())[3]
-        electrodes = mat[key]
-        # every second point was used
-        electrodes = electrodes[::2]
-    else:
-        electrodes_path = os.path.join(dir, "electrodes/electrodes.txt")
-        if not os.path.exists(electrodes_path):
-            folder_path = os.path.split(electrodes_path)[0]
-            electrodes_path = os.listdir(folder_path)[0]
-            print(f"Electrode file not found. Try to load {electrodes_path} instead.")
-            electrodes_path = os.path.join(folder_path, electrodes_path)
-        electrodes = pd.read_csv(electrodes_path, sep=" ", header=None).values[:-1]
-
-    electrodes = electrodes.reshape(-1, 16, 3)
-
-    z_positions = [np.mean(e[:, 2]) for e in electrodes]
-    if all_signals:
-        z_positions = create_equal_distant_array(
-            n=point_levels_3d,
-            value1=z_positions[0],
-            value2=z_positions[1],
-            value3=z_positions[2],
-            value4=z_positions[3],
-        )
-    mesh_arrays = [
-        mesh_to_image(msh, z_pos=z, resolution=resolution) for z in z_positions
-    ]
-    points = [
-        point[1] for point in mesh_arrays
-    ]  # shape: (point_levels_3d * 512 * 512, 3)
-    center_vector = mesh_arrays[0][2]
-    # use mean z_position as center point along z-axis
-    center_vector[2] = np.mean(z_positions)
-    targets = [target[0] for target in mesh_arrays]
-    targets = np.stack(targets, axis=0)
-    points = np.stack(points, axis=0) - center_vector
-    electrodes = electrodes - center_vector
-
-    return targets, electrodes, points
-
-
 def change_rho(targets, lung_rhos):
     class_resistancies = np.array([0.0, 0.3, 0, 0.7, 0.02, 0.025])
     targets_rho = []
@@ -249,6 +157,9 @@ def cosine_similarity(impulses, points):
 
 
 def combine_electrode_positions(electrodes, use_epair_center=False):
+    '''
+    Stacks recording and feeding electrodes
+    '''
     # concatenate each row with the next row
     if use_epair_center:
         return_dim = 2
@@ -376,6 +287,9 @@ def sort_filenames(filenames):
 
 
 def erode_lung_masks(targets, conductivity=None, structure=30):
+    '''
+    Extracts the lung mask from target for a specific conductivity and erodes it with a binary erosion
+    '''
     if conductivity is None:
         lung_masks = (targets <= 0.2) * (targets >= 0.05)
     else:
@@ -393,6 +307,9 @@ def erode_lung_masks(targets, conductivity=None, structure=30):
     return lung_masks
 
 def extract_rho_number(strings):
+    '''
+    Extracts the rho number from a list of strings
+    '''
     pattern = re.compile(r"rho_(\d*\.\d+|\d+)")
     extracted = [
         float(pattern.search(string).group(1)) if pattern.search(string) else None
@@ -402,6 +319,9 @@ def extract_rho_number(strings):
 
 
 def extract_level_number(strings, processed=False):
+    '''
+    Extracts the level number from a list of strings
+    '''
     if processed:
         pattern = re.compile(r"level_(\d+)_")
     else:
@@ -414,6 +334,10 @@ def extract_level_number(strings, processed=False):
 
 
 def sort_strings_by_numbers(strings, first_list, second_list):
+    ''''
+    Sorts a list of strings and two values by the the first and then by the second value
+    '''
+
     # Combine the strings with their corresponding numbers
     combined = list(zip(strings, first_list, second_list))
 

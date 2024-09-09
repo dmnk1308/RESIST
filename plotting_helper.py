@@ -481,7 +481,7 @@ def plot_one_level(
 
     plt.show()
     if save is not None:
-        fig.savefig(save, bbox_inches="tight")
+        fig.savefig(save, bbox_inches="tight", dpi=600)
     plt.close(fig)
 
 
@@ -527,7 +527,7 @@ def plot_columns(
         plt.show()
         plt.tight_layout()
         if save is not None:
-            fig.savefig(save)
+            fig.savefig(save, dpi=600)
     plt.close(fig)
 
 
@@ -636,7 +636,7 @@ def plot_grid(
     )
     plt.show()
     if save is not None:
-        fig.savefig(save, bbox_inches="tight")
+        fig.savefig(save, bbox_inches="tight", dpi=600)
     plt.close(fig)
 
 
@@ -667,7 +667,7 @@ def plot_sirt_comparison(
 ):
     rho = [5, 10, 15, 20]
     fig, axes = plt.subplots(3, len(rho), figsize=[7, 5])
-    cbar_ax = fig.add_axes([0.15, -0.01, 0.74, 0.04])  # [left, bottom, width, height]
+    cbar_ax = fig.add_axes([0.93, 0.06, 0.03, 0.75])  # [left, bottom, width, height]
 
     targets_plot = targets_case[:, 0].squeeze()
     pred_plot = preds_case[:, 0].squeeze()
@@ -718,7 +718,7 @@ def plot_sirt_comparison(
     if show_cbar:
         sm = plt.cm.ScalarMappable(cmap=cmap)
         sm.set_clim(0, 0.7)
-        cbar = fig.colorbar(sm, cax=cbar_ax, orientation="horizontal")
+        cbar = fig.colorbar(sm, cax=cbar_ax, orientation="vertical")
         cbar.set_label("Conductivity (S/m)")
     else:
         cbar_ax.axis("off")
@@ -760,5 +760,5 @@ def plot_sirt_comparison(
     # plt.tight_layout()
     plt.show()
     if save is not None:
-        fig.savefig(save, bbox_inches="tight")
+        fig.savefig(save, bbox_inches="tight", dpi=600)
     plt.close(fig)

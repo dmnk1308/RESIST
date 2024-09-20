@@ -258,3 +258,32 @@ class AttentionModel(nn.Module):
         if return_attention_weights:
             return xy, attention_weights
         return xy
+
+############### LINEAR MODEL ###############
+
+def total_variation_loss(y_pred):
+    """
+    Calculate the total variation loss which penalizes large differences between adjacent pixels.
+    Args:
+        y_pred (torch.Tensor): The predicted image (batch_size, 1, height, width)
+    Returns:
+        torch.Tensor: The total variation loss
+    """
+    # Shifted images to calculate difference between adjacent pixels
+    diff_i = torch.abs(y_pred[:, :, :-1, :] - y_pred[:, :, 1:, :])  # Vertical differences
+    diff_j = torch.abs(y_pred[:, :, :, :-1] - y_pred[:, :, :, 1:])  # Horizontal differences
+
+    # Total variation loss is the sum of differences
+    tv_loss = torch.sum(diff_i) + torch.sum(diff_j)
+    return tv_loss
+
+class LinearModel(nn.Module):
+    def __init__(self):
+        super(LinearModel, self).__init__()
+        # Define a simple linear model 
+        self.fc = nn.Linear(208*4, 4*512*512)
+
+    def forward(self, x):
+        x = self.fc(x)  # (batch_size, 208*4)
+        x = x.view(-1, 4, 512, 512)  # (batch_size, 4, 512, 512)
+        return x

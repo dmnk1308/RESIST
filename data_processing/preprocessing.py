@@ -5,7 +5,7 @@ import fnmatch
 import pandas as pd
 import pyvista as pv
 import scipy
-from data_processing.helper import create_equal_distant_array, pad_to_shape_centered
+from data_processing.helper import create_equal_distant_array, pad_to_shape_centered, extract_float_rho
 from data_processing.mesh_to_array import mesh_to_image, convert_to_vtk, mesh_to_voxels
 from data_processing.obj2py import read_egt, read_get
 
@@ -27,8 +27,7 @@ def load_signals(return_square=True, dir=None):
     
     for case_signal_file in case_signals_files:
         try:
-### ONLY USE INTEGER SIGNALS! REMOVE LATER! ###
-            if case_signal_file.count('_') == 2:
+            if case_signal_file.count('_') == 3:
                 if case_signal_file.endswith('.get'):
                     signal = read_get(signal_dir + '/' + case_signal_file)
                 elif case_signal_file.endswith('.npy'):
@@ -48,7 +47,8 @@ def load_signals(return_square=True, dir=None):
                     signal = signal_matrix
                 else:
                     signal = signal.reshape(16,13)
-                rhos.append(int(case_signal_file.split('_')[2].split('.')[0]))
+                # rhos.append(int(case_signal_file.split('_')[2].split('.')[0]))
+                rhos.append(extract_float_rho(case_signal_file))
                 level.append(int(case_signal_file.split('_')[1]))
                 case_signal.append(signal)
         except:

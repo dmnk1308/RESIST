@@ -13,6 +13,21 @@ import pandas as pd
 from data_processing.mesh_to_array import mesh_to_image, convert_to_vtk
 from scipy.ndimage import binary_erosion
 
+def extract_float_rho(string):
+    '''
+    Used to get the rho value from the filename 'level_<level>_rho_<rho>.get'
+    '''
+    # Split by '_' and '.' to extract the required parts
+    parts = string.split('_')
+    
+    # Convert value1 to an integer and value2 to a float
+    value1 = int(parts[2])
+    value2 = int(parts[3].split('.')[0])
+    
+    # Combine them into a single float where value1 is before the decimal and value2 is after
+    combined_value = float(f"{value1}.{value2}")
+    
+    return combined_value
 
 def rescale_img(img, coords=None, resolution=512):
     """

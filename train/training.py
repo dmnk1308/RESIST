@@ -1,4 +1,6 @@
 import os
+import numpy as np
+from model.models import total_variation_loss, LinearModel
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -7,7 +9,6 @@ from torch.optim.lr_scheduler import StepLR
 from tqdm import tqdm
 import wandb
 import sys
-
 sys.path.append("../")
 from utils.helper import log_heatmaps, make_cmap
 
@@ -23,6 +24,7 @@ def training(
     batch_size_val=2,
     point_levels_3d=9,
     output_dir=None,
+    lambda_tv=1e-9,
 ):
     '''
     Training routine for RESIST with validation step.
@@ -43,30 +45,49 @@ def training(
     best_boosted_val_loss = 100
     cmap = make_cmap()
     for epoch in pbar:
-        epoch_loss_train, epoch_lung_loss_train, model, optimizer = training_step(
-            model,
-            train_dataloader,
-            optimizer,
-            lr,
-            loss,
-            device,
-            epoch,
-            loss_lung_multiplier,
-        )
+        if isinstance(model, LinearModel):
+            epoch_loss_train, epoch_lung_loss_train, model, optimizer = training_step_linear(
+                model,
+                train_dataloader,
+                optimizer,
+                lambda_tv,
+                device
+            )
+        else:
+            epoch_loss_train, epoch_lung_loss_train, model, optimizer = training_step(
+                model,
+                train_dataloader,
+                optimizer,
+                lr,
+                loss,
+                device,
+                epoch,
+                loss_lung_multiplier,
+            )
+
         scheduler.step()
         torch.cuda.empty_cache()
         if epoch % 1 == 0:  # and epoch!=0:
-            epoch_loss_val, epoch_lung_loss_val, epoch_boosted_loss_val = (
-                validation_step(
+            if isinstance(model, LinearModel):
+                epoch_loss_val, epoch_lung_loss_val, epoch_boosted_loss_val = validation_step_linear(
                     model,
                     val_dataloader,
-                    loss,
+                    lambda_tv,
                     device,
-                    cmap,
-                    point_levels_3d=point_levels_3d,
-                    loss_lung_multiplier=loss_lung_multiplier,
+                    cmap
                 )
-            )
+            else:
+                epoch_loss_val, epoch_lung_loss_val, epoch_boosted_loss_val = (
+                    validation_step(
+                        model,
+                        val_dataloader,
+                        loss,
+                        device,
+                        cmap,
+                        point_levels_3d=point_levels_3d,
+                        loss_lung_multiplier=loss_lung_multiplier,
+                    )
+                )
         pbar.set_description(
             f"Epoch: {epoch+1}, Train Loss: {epoch_loss_train:.5f}, Val Loss: {epoch_loss_val:.5f},  Train Lung Loss: {epoch_lung_loss_train:.5f}, Val Lung Loss: {epoch_lung_loss_val:.5f}"
         )
@@ -172,62 +193,169 @@ def validation_step(
     num_val = 0
     n_plotting = int(4 * n_examples)
     plotted = False
-    for i, (points, signals, electrodes, mask, target, tissue) in enumerate(dataloader):
-        # validate on electrodes level only:
-        points = points.reshape(dataloader.batch_size, -1, point_levels_3d, 512, 512, 3)
-        target = target.reshape(dataloader.batch_size, -1, point_levels_3d, 512, 512, 1)
-        mask = mask.reshape(dataloader.batch_size, -1, point_levels_3d, 512, 512, 1)
-        levels = torch.arange(point_levels_3d)
-        electrode_levels = torch.linspace(levels[1], levels[-2], 4).numpy().astype(int)
-        points = points[:, :, electrode_levels].reshape(dataloader.batch_size, -1, 3)
-        target = target[:, :, electrode_levels].reshape(dataloader.batch_size, -1, 1)
-        mask = mask[:, :, electrode_levels].reshape(dataloader.batch_size, -1, 1)
-        tissue = tissue.reshape(dataloader.batch_size, -1, 1)
-        if model.use_body_only:
-            tissue = torch.where(tissue > 0, 1, 0)
-        points_batched = points.chunk(8, dim=1)
-        pred_tmp = []
-        for points in points_batched:
-            pred = model(
-                signals=signals.to(device),
-                electrodes=electrodes.to(device),
-                xy=points.to(device),
-                tissue=tissue.to(device),
-                training=False,
-            )
-            pred_tmp.append(pred.detach().cpu())
-        pred = torch.concat(pred_tmp)
-        pred = pred.reshape(dataloader.batch_size, -1, 1)
-        lung_points = (target <= 0.2) * (
-            target >= 0.05
-        )  # * (pred.detach().cpu()<=0.25)
-        mse = loss(pred.detach().cpu(), target)
-        epoch_loss += mse.mean()
-        mse[lung_points] *= loss_lung_multiplier
-        boosted_loss += mse.mean()
-        if torch.sum(mask) > 0:
-            lung_loss += loss(pred.detach().cpu()[mask], target[mask]).mean()
+    with torch.no_grad():
+        for i, (points, signals, electrodes, mask, target, tissue) in enumerate(dataloader):
+            # validate on electrodes level only:
+            points = points.reshape(dataloader.batch_size, -1, point_levels_3d, 512, 512, 3)
+            target = target.reshape(dataloader.batch_size, -1, point_levels_3d, 512, 512, 1)
+            mask = mask.reshape(dataloader.batch_size, -1, point_levels_3d, 512, 512, 1)
+            levels = torch.arange(point_levels_3d)
+            electrode_levels = torch.linspace(levels[1], levels[-2], 4).numpy().astype(int)
+            points = points[:, :, electrode_levels].reshape(dataloader.batch_size, -1, 3)
+            target = target[:, :, electrode_levels].reshape(dataloader.batch_size, -1, 1)
+            mask = mask[:, :, electrode_levels].reshape(dataloader.batch_size, -1, 1)
+            tissue = tissue.reshape(dataloader.batch_size, -1, 1)
+            if model.use_body_only:
+                tissue = torch.where(tissue > 0, 1, 0)
+            points_batched = points.chunk(8, dim=1)
+            pred_tmp = []
+            for points in points_batched:
+                pred = model(
+                    signals=signals.to(device),
+                    electrodes=electrodes.to(device),
+                    xy=points.to(device),
+                    tissue=tissue.to(device),
+                    training=False,
+                )
+                pred_tmp.append(pred.detach().cpu())
+            pred = torch.concat(pred_tmp)
+            pred = pred.reshape(dataloader.batch_size, -1, 1)
+            lung_points = (target <= 0.2) * (
+                target >= 0.05
+            )  # * (pred.detach().cpu()<=0.25)
+            mse = loss(pred.detach().cpu(), target)
+            epoch_loss += mse.mean()
+            mse[lung_points] *= loss_lung_multiplier
+            boosted_loss += mse.mean()
+            if torch.sum(mask) > 0:
+                lung_loss += loss(pred.detach().cpu()[mask], target[mask]).mean()
+
+            if num_val < n_plotting:
+                preds.append(pred.detach().cpu().reshape(-1, 512, 512, 1))
+                targets.append(target.detach().cpu().reshape(-1, 512, 512, 1))
+                num_val += preds[-1].shape[0]
+                # log qualitative results
+            if num_val >= n_plotting and not plotted:
+                preds = torch.cat(preds)[:n_plotting]
+                targets = torch.cat(targets)[:n_plotting]
+                log_heatmaps(
+                    targets,
+                    preds,
+                    n_examples=n_examples,
+                    n_levels=4,
+                    cmap=cmap,
+                    resolution=512,
+                )
+                plotted = True
+    epoch_loss /= i + 1
+    lung_loss /= i + 1
+    boosted_loss /= i + 1
+    return epoch_loss, lung_loss, boosted_loss
+
+################## LINEAR MODEL TRAINING ##################
+
+def training_step_linear(model, train_dataloader, optimizer, lambda_tv, device):
+    epoch_loss = []
+    epoch_loss_mse = []
+    epoch_loss_tv = []
+    model.to(device)
+    model.train()
+
+    for _, signals, electrode, _, targets, _ in train_dataloader:
+        tmp_batch_size = signals.shape[0]
+        targets = targets.reshape(tmp_batch_size, -1, 512, 512)
+        point_levels_3d = targets.shape[1]
+        levels = np.arange(point_levels_3d)
+        electrode_levels = np.linspace(levels[1], levels[-2], 4).astype(int)
+        targets = targets[:, electrode_levels]
+        signals = signals.reshape(tmp_batch_size, 4*208)
+            
+        # Forward pass to get the predicted image
+        y_pred = model(signals.to(device).float())
+
+        # Calculate TV regularization loss
+        tv_loss = total_variation_loss(y_pred)
+
+        # Calculate MSE loss (e.g., for regression task)
+        mse_loss = nn.MSELoss()(y_pred.reshape(tmp_batch_size, 4*512*512), targets.reshape(tmp_batch_size, 4*512*512).to('cuda'))
+
+        # Combine MSE loss and TV regularization (lambda is a hyperparameter)
+        total_loss = mse_loss + lambda_tv * tv_loss
+        total_loss.backward()
+        total_loss = total_loss.detach().cpu().numpy()
+
+        epoch_loss.append(total_loss)
+        epoch_loss_mse.append(mse_loss.detach().cpu().numpy())
+        epoch_loss_tv.append(tv_loss.detach().cpu().numpy())
+
+        # Update the weights
+        optimizer.step()
+
+        # Zero the gradients
+        optimizer.zero_grad()
+
+    epoch_loss = np.mean(epoch_loss)
+    epoch_loss_mse = np.mean(epoch_loss_mse)
+    epoch_loss_tv = np.mean(epoch_loss_tv)
+
+    return epoch_loss_mse, epoch_loss_tv, model, optimizer
+    
+def validation_step_linear(model, val_dataloader, lambda_tv, device, cmap, n_plotting=4):
+    epoch_loss_val = []
+    epoch_loss_val_mse = []
+    epoch_loss_val_tv = []
+    preds = []
+    targets_l = []
+    plotted = False
+    num_val = 0
+
+    for _, signals, electrode, _, targets, _ in val_dataloader:
+        model.eval()
+        tmp_batch_size = signals.shape[0]
+        targets = targets.reshape(tmp_batch_size, -1, 512, 512)
+        point_levels_3d = targets.shape[1]
+        levels = np.arange(point_levels_3d)
+        electrode_levels = np.linspace(levels[1], levels[-2], 4).astype(int)
+        targets = targets[:, electrode_levels]
+        signals = signals.reshape(tmp_batch_size, 4*208)
+            
+        # Forward pass to get the predicted image
+        y_pred = model(signals.to('cuda').float())
+
+        # Calculate TV regularization loss
+        tv_loss = total_variation_loss(y_pred)
+
+        # Calculate MSE loss (e.g., for regression task)
+        mse_loss = nn.MSELoss()(y_pred.reshape(tmp_batch_size, 4*512*512), targets.reshape(tmp_batch_size, 4*512*512).to('cuda'))
+
+        # Combine MSE loss and TV regularization (lambda is a hyperparameter)
+        total_loss = mse_loss + lambda_tv * tv_loss
+        total_loss = total_loss.detach().cpu().numpy()
+
+        epoch_loss_val.append(total_loss)
+        epoch_loss_val_mse.append(mse_loss.detach().cpu().numpy())
+        epoch_loss_val_tv.append(tv_loss.detach().cpu().numpy())
+
+        # Plotting
         if num_val < n_plotting:
-            preds.append(pred.detach().cpu().reshape(-1, 512, 512, 1))
-            targets.append(target.detach().cpu().reshape(-1, 512, 512, 1))
+            preds.append(y_pred.detach().cpu().reshape(-1, 4, 512, 512, 1))
+            targets_l.append(targets.detach().cpu().reshape(-1, 4, 512, 512, 1))
             num_val += preds[-1].shape[0]
-            # log qualitative results
         if num_val >= n_plotting and not plotted:
             preds = torch.cat(preds)[:n_plotting]
-            targets = torch.cat(targets)[:n_plotting]
+            targets_l = torch.cat(targets_l)[:n_plotting]
             log_heatmaps(
-                targets,
+                targets_l,
                 preds,
-                n_examples=n_examples,
+                n_examples=n_plotting,
                 n_levels=4,
                 cmap=cmap,
                 resolution=512,
             )
             plotted = True
 
-        # masked_loss += m_l
-    epoch_loss /= i + 1
-    lung_loss /= i + 1
-    boosted_loss /= i + 1
-    # masked_loss /= (i+1)
-    return epoch_loss, lung_loss, boosted_loss
+    epoch_loss_mse_val = np.mean(epoch_loss_val_mse)
+    epoch_loss_tv_val = np.mean(epoch_loss_val_tv)
+    epoch_loss_val = np.mean(epoch_loss_val)
+
+    return epoch_loss_mse_val, epoch_loss_tv_val, 999

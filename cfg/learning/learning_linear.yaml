@@ -1,0 +1,16 @@
+training:
+  epochs: 200
+  batch_size_train: 4
+  learning_rate: 0.00005
+  loss_lung_multiplier: 8 #8
+  sample_points: 100000
+  device: cuda
+  lambda_tv: 1e-9
+
+validation:
+  batch_size_val: 1
+  downsample_factor_val: 2
+
+testing:
+  batch_size_test: 1
+  downsample_factor_test: 2

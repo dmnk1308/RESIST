@@ -156,7 +156,6 @@ def make_npz_3d_multi(
         processed_data_folder=processed_data_folder,
         resolution=resolution,
         point_levels_3d=point_levels_3d,
-        multi=True,
     )
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
         # Submit tasks to the executor
@@ -208,7 +207,6 @@ def write_npz_case_3d(
     processed_data_folder="data/processed/3d",
     resolution=128,
     point_levels_3d=9,
-    multi=False,
 ):
     '''
     Makes individual .npz files from raw data
@@ -251,18 +249,17 @@ def write_npz_case_3d(
     # make directory for each case
     os.makedirs(os.path.join(case_dir_processed), exist_ok=True)
     for s, t, r in zip(signal, targets, rhos):
-        # for now only save 5, 10, 15, 20 rho
-        if r in [5, 10, 15, 20]:
-            eroded_lung_mask = erode_lung_masks(t)
-            np.savez_compressed(
-                os.path.join(case_dir_processed, case + "_" + str(r) + ".npz"),
-                signals=s,
-                targets=t,
-                masks=eroded_lung_mask,
-                electrodes=electrode,
-                points=points,
-                tissue=tissue,
-            )
+        eroded_lung_mask = erode_lung_masks(t)
+        np.savez_compressed(
+            os.path.join(case_dir_processed, case + "_" + str(r) + ".npz"),
+            signals=s,
+            targets=t,
+            rhos=r,
+            masks=eroded_lung_mask,
+            electrodes=electrode,
+            points=points,
+            tissue=tissue,
+        )
 
 
 def make_dataset_3d(
@@ -284,7 +281,7 @@ def make_dataset_3d(
     path_train_dataset="data/datasets/train_dataset.pt",
     signal_norm="all",
     level_used=4,
-    include_resistivities=[5, 10, 15, 20]
+    include_resistivities='all'
 ):
     '''
     Generates training, validation and test datasets from .npz files
@@ -298,6 +295,7 @@ def make_dataset_3d(
         for case_number in cases_number
         if case_number > 400 and case_number < 450
     ]
+
     cases_number.sort()
     test_cases = [
         "case_TCIA_" + str(case_number) + "_0" for case_number in cases_number
@@ -473,7 +471,7 @@ class EITData3D(Dataset):
         processed_path="data/processed/3d",
         base_dir="",
         level_used=4,
-        include_resistivities=[5, 10, 15, 20]
+        include_resistivities='all'
     ):
         '''
         Dataset class for 3D EIT data
@@ -506,7 +504,7 @@ class EITData3D(Dataset):
             for dir_path, files in case_files.items()
             for file in files
         ]
-        if training:
+        if training and include_resistivities != 'all':
             case_files = [file for file in case_files if int(file.split(".")[0].split('_')[-1]) in include_resistivities]
         self.case_files = sort_filenames(case_files)
         self.point_levels_3d = point_levels_3d

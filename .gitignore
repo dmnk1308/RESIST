@@ -7,3 +7,5 @@ singularity
 logs*
 wandb*
 figures
+*.gif
+archive

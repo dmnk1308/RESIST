@@ -1,6 +1,6 @@
 side_processing/old
 deep_eit.*
-data
+/data/
 outputs*
 *__pycache*
 singularity

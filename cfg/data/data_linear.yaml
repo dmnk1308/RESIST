@@ -1,0 +1,29 @@
+# General setting
+cases: all #[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14]
+resolution: 512
+model_3d: True
+
+# Data 
+raw_data_folder: data/raw/
+processed_data_folder: data/processed/all_rho 
+dataset_data_folder: data/datasets/
+write_npz: True
+overwrite_npz: False
+write_dataset: False
+name_prefix: "_linear"
+return_electrodes: True
+apply_rotation: False
+apply_translation: False
+translation_x: 0.5
+translation_y: 0.5
+translation_z: 0.3
+apply_subsampling: False
+point_levels_3d: 4
+point_range_3d: 0.05
+multi_process: True
+num_workers: all
+all_signals: True
+signal_norm: all #all
+normalize_space: xy #xy
+level_used: 4
+include_resistivities: all

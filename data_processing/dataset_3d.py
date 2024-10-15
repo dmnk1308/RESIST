@@ -578,6 +578,7 @@ class EITData3D(Dataset):
         signal = (signal - self.train_mean) / self.train_std
         signal = signal.reshape(4, -1, 13)[:self.level_used]
         mask = torch.from_numpy(file["masks"])
+        rho = torch.from_numpy(file["rhos"])
         electrode = file["electrodes"][:self.level_used]
         electrode = torch.from_numpy(combine_electrode_positions(electrode))
         electrode = (electrode - self.points_min) / (
@@ -604,4 +605,4 @@ class EITData3D(Dataset):
             points = points[sample_indices].float()
             target = target[sample_indices]
             tissue = tissue[sample_indices]
-        return points.float(), signal.float(), electrode, mask, target.float(), tissue
+        return points.float(), signal.float(), electrode, mask, target.float(), tissue, rho

@@ -1,15 +1,15 @@
 model:
-  _target_: model.models.AttentionModel
+  _target_: model.models.Resist
   attention_on: 'sequence'      # signal (individual meas.) or sequence (all meas. of a cycle)
-  num_attention_blocks: 5
+  num_attention_blocks: 2 # 5
   num_encoding_functions_electrodes: 10
   num_encoding_functions_points: 10
   pos_encoding: False
-  attention_dim: 256
+  attention_dim: 128 # 256
   dropout_attention: 0.2
   num_electrodes: 16
   num_linear_output_blocks: 3
-  linear_output_channels: 256
+  linear_output_channels: 64 # 256
   use_tissue_embedding: False   # use masks per query point for all tissue types
   use_tissue_body_only: False   # use masks per query point for body tissue only
   emb_dropout: 0.
@@ -18,15 +18,15 @@ model:
 
 training:
   epochs: 200
-  batch_size_train: 4
-  learning_rate: 0.00005
+  batch_size_train: 64 # 4
+  learning_rate: 0.00001 # 0.00005
   loss_lung_multiplier: 8 #8
   sample_points: 100000
   device: cuda
   lambda_tv: 1e-9
 
 validation:
-  batch_size_val: 1
+  batch_size_val: 64
   downsample_factor_val: 2
 
 testing:

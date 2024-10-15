@@ -34,6 +34,11 @@ def reconstruct(data,
     signals_std = torch.load(os.path.join(cfg.data.dataset_data_folder, 'train_dataset.pt')).train_std.numpy()
     points_max = torch.load(os.path.join(cfg.data.dataset_data_folder, 'train_dataset.pt')).points_max.numpy()
     points_min = torch.load(os.path.join(cfg.data.dataset_data_folder, 'train_dataset.pt')).points_min.numpy()
+    if not os.path.exists('outputs/resist/signals_mean.npy'):
+        np.save('outputs/resist/signals_mean.npy', signals_mean)
+        np.save('outputs/resist/signals_std.npy', signals_std)
+        np.save('outputs/resist/points_max.npy', points_max)
+        np.save('outputs/resist/points_min.npy', points_min)
 
     # load electrodes position if available, otherwise use default
     if electrodes is None:
@@ -96,9 +101,9 @@ def reconstruct(data,
     resolution_z = resolution
     if axis == 'axial':
         resolution_z = n_zpos
-    elif axis == 'sagittal':
-        resolution_x = n_zpos
     elif axis == 'coronal':
+        resolution_x = n_zpos
+    elif axis == 'sagittal':
         resolution_y = n_zpos
     else:
         raise ValueError('axis must be one of axial, sagittal, or coronal')
@@ -118,23 +123,23 @@ def reconstruct(data,
         xyz = np.meshgrid(x, y, z)
         # transpose grid to (z, y, x, 3) and switch x and y
         xyz = np.array(xyz).T
-        xyz = np.moveaxis(xyz,1,1).reshape(1, -1, 3)
+        xyz = np.moveaxis(xyz,2,1).reshape(1, -1, 3)
         points = np.tile(xyz, (batch_size, 1, 1))
     if batch_size > 1:
         pred_tmp = []
         for i in tqdm(range(batch_size)):
-            _, pred, _ = testing(model, [signals[i][None], electrodes[i][None], points[i][None]], device=device, wandb_log=False, point_levels_3d=len(zpos), point_chunks=len(zpos))
+            _, pred, _ = testing(model, [signals[i][None], electrodes[i][None], points[i][None]], device=device, wandb_log=False, point_levels_3d=len(zpos), point_chunks=len(zpos), resolution=resolution)
             pred_tmp.append(pred.cpu())
         pred = torch.stack(pred_tmp, dim=0)
     else:
-        _, pred, _ = testing(model, [signals, electrodes, points], device=device, wandb_log=False, point_levels_3d=len(zpos), point_chunks=len(zpos))
-    pred = pred.reshape(batch_size, resolution_z, resolution_x, resolution_y).numpy()
+        _, pred, _ = testing(model, [signals, electrodes, points], device=device, wandb_log=False, point_levels_3d=len(zpos), point_chunks=len(zpos), resolution=resolution)
+    pred = pred.reshape(batch_size, resolution_z, resolution_y, resolution_x).numpy()
     # move view axis to front
     if axis == 'axial':
         pred = np.moveaxis(pred, 1, 1)
-    elif axis == 'sagittal':
-        pred = np.moveaxis(pred, 2, 1)
     elif axis == 'coronal':
+        pred = np.moveaxis(pred, 2, 1)
+    elif axis == 'sagittal':
         pred = np.moveaxis(pred, 3, 1)
 
     return pred

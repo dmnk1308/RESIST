@@ -54,6 +54,9 @@ def main(cfg: DictConfig, inference=False):
     )
     if cfg.model_type == "resist":
         model = hydra.utils.instantiate(cfg.learning.model)
+    elif cfg.model_type == "resist_single":
+        cfg.learning.model._target_ = "model.models.ResistMeanLung"
+        model = hydra.utils.instantiate(cfg.learning.model)
     elif cfg.model_type == "linear":
         model = LinearModel()
 

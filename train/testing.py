@@ -6,6 +6,7 @@ from tqdm import tqdm
 import wandb
 import sys
 import copy
+from model.models import total_variation_loss, LinearModel, ResistMeanLung, Resist
 
 sys.path.append("../")
 from utils.helper import log_heatmaps, make_cmap
@@ -36,42 +37,58 @@ def testing(
         attention_weights_list = []
         if isinstance(data, Dataset):
             dataloader = DataLoader(data, batch_size=1, shuffle=False)
-            for i, (points, signals, electrodes, mask, target, tissue) in tqdm(
+            for i, (points, signals, electrodes, mask, target, tissue, rho) in tqdm(
                 enumerate(dataloader), total=len(dataloader)
             ):
-                if electrode_level_only:
-                    points = points.reshape(
-                        dataloader.batch_size, -1, point_levels_3d, 512, 512, 3
-                    )
-                    target = target.reshape(
-                        dataloader.batch_size, -1, point_levels_3d, 512, 512, 1
-                    )
-                    levels = torch.arange(point_levels_3d)
-                    electrode_levels = (
-                        torch.linspace(levels[1], levels[-2], 4).numpy().astype(int)
-                    )
-                    points = points[:, :, electrode_levels].reshape(
-                        dataloader.batch_size, -1, 3
-                    )
-                    target = target[:, :, electrode_levels].reshape(
-                        dataloader.batch_size, -1, 1
-                    )
-                if noise is not None:
-                    signals = signals + noise[i].unsqueeze(0).reshape(signals.shape)
-                if electrode_noise is not None:
-                    electrodes_copy = copy.deepcopy(electrodes).reshape(-1, 3).numpy()
-                    unique_electrodes = copy.deepcopy(
-                        electrodes[:, :, 0, 0, :].reshape(-1, 3).numpy()
-                    )
-                    for e in unique_electrodes:
-                        idx = np.all(np.equal(e, electrodes_copy).astype(bool), axis=1)
-                        electrodes_copy[idx] += np.random.randn(1, 3) * electrode_noise
-                    electrodes = torch.from_numpy(electrodes_copy.reshape(electrodes.shape))
-                points = points.reshape(dataloader.batch_size, -1, 3)
-                points_batched = points.chunk(point_chunks, dim=1)
-                target = target.reshape(dataloader.batch_size, -1, 1)
-                tissue = tissue.reshape(dataloader.batch_size, -1, 1)
-                for points in points_batched:
+                ## RESIST MODEL ##
+                if isinstance(model, Resist):
+                    if electrode_level_only:
+                        points = points.reshape(
+                            dataloader.batch_size, -1, point_levels_3d, 512, 512, 3
+                        )
+                        target = target.reshape(
+                            dataloader.batch_size, -1, point_levels_3d, 512, 512, 1
+                        )
+                        levels = torch.arange(point_levels_3d)
+                        electrode_levels = (
+                            torch.linspace(levels[1], levels[-2], 4).numpy().astype(int)
+                        )
+                        points = points[:, :, electrode_levels].reshape(
+                            dataloader.batch_size, -1, 3
+                        )
+                        target = target[:, :, electrode_levels].reshape(
+                            dataloader.batch_size, -1, 1
+                        )
+                    if noise is not None:
+                        signals = signals + noise[i].unsqueeze(0).reshape(signals.shape)
+                    if electrode_noise is not None:
+                        electrodes_copy = copy.deepcopy(electrodes).reshape(-1, 3).numpy()
+                        unique_electrodes = copy.deepcopy(
+                            electrodes[:, :, 0, 0, :].reshape(-1, 3).numpy()
+                        )
+                        for e in unique_electrodes:
+                            idx = np.all(np.equal(e, electrodes_copy).astype(bool), axis=1)
+                            electrodes_copy[idx] += np.random.randn(1, 3) * electrode_noise
+                        electrodes = torch.from_numpy(electrodes_copy.reshape(electrodes.shape))
+                    points = points.reshape(dataloader.batch_size, -1, 3)
+                    points_batched = points.chunk(point_chunks, dim=1)
+                    target = target.reshape(dataloader.batch_size, -1, 1)
+                    tissue = tissue.reshape(dataloader.batch_size, -1, 1)
+                    for points in points_batched:
+                        pred = model(
+                            signals=signals.to(device),
+                            electrodes=electrodes.to(device),
+                            xy=points.to(device),
+                            tissue=tissue.to(device),
+                            training=False,
+                            return_attention_weights=return_attention_weights,
+                        )
+                        if return_attention_weights:
+                            pred, attention_weights = pred
+                            attention_weights_list.append(attention_weights.detach().cpu())
+                        preds.append(pred.detach().cpu())
+                    targets.append(target)
+                elif isinstance(model, ResistMeanLung):
                     pred = model(
                         signals=signals.to(device),
                         electrodes=electrodes.to(device),
@@ -80,23 +97,28 @@ def testing(
                         training=False,
                         return_attention_weights=return_attention_weights,
                     )
-                    if return_attention_weights:
-                        pred, attention_weights = pred
-                        attention_weights_list.append(attention_weights.detach().cpu())
+                    pred.reshape(dataloader.batch_size, 1)
                     preds.append(pred.detach().cpu())
-                targets.append(target)
-            preds = torch.cat(preds, dim=1)
-            targets = torch.cat(targets)
-            targets = targets.reshape(-1, resolution, resolution, 1)
-            preds = preds.reshape(-1, resolution, resolution, 1)
-            test_loss = loss(preds, targets)
-            lung_masks = erode_lung_masks(targets)
+                    targets.append(rho)
 
-            if torch.sum(lung_masks) > 0:
-                test_lung_loss = test_loss[lung_masks].mean()
-            else:
+            if isinstance(model, Resist):
+                preds = torch.cat(preds, dim=1)
+                targets = torch.cat(targets)
+                targets = targets.reshape(-1, resolution, resolution, 1)
+                preds = preds.reshape(-1, resolution, resolution, 1)
+                test_loss = loss(preds, targets)
+                lung_masks = erode_lung_masks(targets)
+
+                if torch.sum(lung_masks) > 0:
+                    test_lung_loss = test_loss[lung_masks].mean()
+                else:
+                    test_lung_loss = 0
+                test_loss = test_loss.mean()
+            elif isinstance(model, ResistMeanLung):
+                preds = torch.cat(preds)
+                targets = torch.cat(targets)
+                test_loss = loss(preds, targets)
                 test_lung_loss = 0
-            test_loss = test_loss.mean()
 
         else:
             signals, electrodes, points = data[0], data[1], data[2]
@@ -142,7 +164,10 @@ def testing(
             wandb.log({"test_loss": test_loss})
             wandb.log({"test_lung_loss": test_lung_loss})
             # log qualitative results
-            log_heatmaps(targets, preds, n_levels=point_levels_3d, cmap=cmap)
+            try:
+                log_heatmaps(targets, preds, n_levels=point_levels_3d, cmap=cmap)
+            except:
+                pass
         else:
             if return_loss:
                 return (test_loss, test_lung_loss)

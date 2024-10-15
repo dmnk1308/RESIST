@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from model.models import total_variation_loss, LinearModel
+from model.models import total_variation_loss, LinearModel, ResistMeanLung, Resist
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -140,31 +140,44 @@ def training_step(
     model.to(device)
     epoch_loss = 0
     lung_loss = 0
-    for i, (points, signals, electrodes, mask, targets, tissue) in enumerate(
+    for i, (points, signals, electrodes, mask, targets, tissue, rho) in enumerate(
         dataloader
     ):
         optimizer.zero_grad()
         if model.use_body_only:
             tissue = torch.where(tissue > 0, 1, 0)
-        pred = model(
-            signals=signals.to(device),
-            electrodes=electrodes.to(device),
-            xy=points.to(device),
-            tissue=tissue.to(device),
-            training=True,
-        )
-        l = loss(pred, targets.to(device))
-        lung_points = (targets <= 0.2) * (targets >= 0.05)
-        l[lung_points.squeeze()] *= loss_lung_multiplier
-        l = l.mean()
-        l.backward()
-        if torch.sum(lung_points) > 0:
-            lung_points = (
-                (targets <= 0.2) * (targets >= 0.05) * (pred.detach().cpu() <= 0.25)
+
+        if isinstance(model, Resist):
+            pred = model(
+                signals=signals.to(device),
+                electrodes=electrodes.to(device),
+                xy=points.to(device),
+                tissue=tissue.to(device),
+                training=True,
             )
-            lung_loss += loss(
-                pred.detach().cpu()[lung_points], targets[lung_points]
-            ).mean()
+            l = loss(pred, targets.to(device))
+            lung_points = (targets <= 0.2) * (targets >= 0.05)
+            l[lung_points.squeeze()] *= loss_lung_multiplier
+            l = l.mean()
+            l.backward()
+            if torch.sum(lung_points) > 0:
+                lung_points = (
+                    (targets <= 0.2) * (targets >= 0.05) * (pred.detach().cpu() <= 0.25)
+                )
+                lung_loss += loss(
+                    pred.detach().cpu()[lung_points], targets[lung_points]
+                ).mean()
+
+        elif isinstance(model, ResistMeanLung):
+            pred = model(
+                signals=signals.to(device),
+                electrodes=electrodes.to(device),
+                training=True,
+            )
+            target = torch.ones_like(pred)*rho.reshape(pred.shape).to(device).float()
+            l = loss(pred, target)
+            l = l.mean()
+            l.backward()
         optimizer.step()
         epoch_loss += l.detach().cpu()
     epoch_loss /= i + 1
@@ -194,59 +207,71 @@ def validation_step(
     n_plotting = int(4 * n_examples)
     plotted = False
     with torch.no_grad():
-        for i, (points, signals, electrodes, mask, target, tissue) in enumerate(dataloader):
-            # validate on electrodes level only:
-            points = points.reshape(dataloader.batch_size, -1, point_levels_3d, 512, 512, 3)
-            target = target.reshape(dataloader.batch_size, -1, point_levels_3d, 512, 512, 1)
-            mask = mask.reshape(dataloader.batch_size, -1, point_levels_3d, 512, 512, 1)
-            levels = torch.arange(point_levels_3d)
-            electrode_levels = torch.linspace(levels[1], levels[-2], 4).numpy().astype(int)
-            points = points[:, :, electrode_levels].reshape(dataloader.batch_size, -1, 3)
-            target = target[:, :, electrode_levels].reshape(dataloader.batch_size, -1, 1)
-            mask = mask[:, :, electrode_levels].reshape(dataloader.batch_size, -1, 1)
-            tissue = tissue.reshape(dataloader.batch_size, -1, 1)
-            if model.use_body_only:
-                tissue = torch.where(tissue > 0, 1, 0)
-            points_batched = points.chunk(8, dim=1)
-            pred_tmp = []
-            for points in points_batched:
+        for i, (points, signals, electrodes, mask, target, tissue, rho) in enumerate(dataloader):
+            ## RESIST MODEL ##
+            if isinstance(model, Resist):
+                # validate on electrodes level only:
+                points = points.reshape(dataloader.batch_size, -1, point_levels_3d, 512, 512, 3)
+                target = target.reshape(dataloader.batch_size, -1, point_levels_3d, 512, 512, 1)
+                mask = mask.reshape(dataloader.batch_size, -1, point_levels_3d, 512, 512, 1)
+                levels = torch.arange(point_levels_3d)
+                electrode_levels = torch.linspace(levels[1], levels[-2], 4).numpy().astype(int)
+                points = points[:, :, electrode_levels].reshape(dataloader.batch_size, -1, 3)
+                target = target[:, :, electrode_levels].reshape(dataloader.batch_size, -1, 1)
+                mask = mask[:, :, electrode_levels].reshape(dataloader.batch_size, -1, 1)
+                tissue = tissue.reshape(dataloader.batch_size, -1, 1)
+                if model.use_body_only:
+                    tissue = torch.where(tissue > 0, 1, 0)
+                points_batched = points.chunk(8, dim=1)
+                pred_tmp = []
+                for points in points_batched:
+                    pred = model(
+                        signals=signals.to(device),
+                        electrodes=electrodes.to(device),
+                        xy=points.to(device),
+                        tissue=tissue.to(device),
+                        training=False,
+                    )
+                    pred_tmp.append(pred.detach().cpu())
+                pred = torch.concat(pred_tmp)
+                pred = pred.reshape(dataloader.batch_size, -1, 1)
+                lung_points = (target <= 0.2) * (
+                    target >= 0.05
+                )  # * (pred.detach().cpu()<=0.25)
+                mse = loss(pred.detach().cpu(), target)
+                epoch_loss += mse.mean()
+                mse[lung_points] *= loss_lung_multiplier
+                boosted_loss += mse.mean()
+                if torch.sum(mask) > 0:
+                    lung_loss += loss(pred.detach().cpu()[mask], target[mask]).mean()
+
+                if num_val < n_plotting:
+                    preds.append(pred.detach().cpu().reshape(-1, 512, 512, 1))
+                    targets.append(target.detach().cpu().reshape(-1, 512, 512, 1))
+                    num_val += preds[-1].shape[0]
+                    # log qualitative results
+                if num_val >= n_plotting and not plotted:
+                    preds = torch.cat(preds)[:n_plotting]
+                    targets = torch.cat(targets)[:n_plotting]
+                    log_heatmaps(
+                        targets,
+                        preds,
+                        n_examples=n_examples,
+                        n_levels=4,
+                        cmap=cmap,
+                        resolution=512,
+                    )
+                    plotted = True
+            elif isinstance(model, ResistMeanLung):
                 pred = model(
                     signals=signals.to(device),
                     electrodes=electrodes.to(device),
-                    xy=points.to(device),
-                    tissue=tissue.to(device),
                     training=False,
                 )
-                pred_tmp.append(pred.detach().cpu())
-            pred = torch.concat(pred_tmp)
-            pred = pred.reshape(dataloader.batch_size, -1, 1)
-            lung_points = (target <= 0.2) * (
-                target >= 0.05
-            )  # * (pred.detach().cpu()<=0.25)
-            mse = loss(pred.detach().cpu(), target)
-            epoch_loss += mse.mean()
-            mse[lung_points] *= loss_lung_multiplier
-            boosted_loss += mse.mean()
-            if torch.sum(mask) > 0:
-                lung_loss += loss(pred.detach().cpu()[mask], target[mask]).mean()
-
-            if num_val < n_plotting:
-                preds.append(pred.detach().cpu().reshape(-1, 512, 512, 1))
-                targets.append(target.detach().cpu().reshape(-1, 512, 512, 1))
-                num_val += preds[-1].shape[0]
-                # log qualitative results
-            if num_val >= n_plotting and not plotted:
-                preds = torch.cat(preds)[:n_plotting]
-                targets = torch.cat(targets)[:n_plotting]
-                log_heatmaps(
-                    targets,
-                    preds,
-                    n_examples=n_examples,
-                    n_levels=4,
-                    cmap=cmap,
-                    resolution=512,
-                )
-                plotted = True
+                target = torch.ones_like(pred)*rho.reshape(pred.shape).to(device).float()
+                l = loss(pred, target)
+                l = l.mean()
+                epoch_loss += l.detach().cpu()
     epoch_loss /= i + 1
     lung_loss /= i + 1
     boosted_loss /= i + 1

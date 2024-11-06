@@ -19,4 +19,7 @@ generate_figures.py
 playground*
 preprocess_real_data.ipynb
 testing_and_plotting*
+results.md
+plotting_helper.py
+reconstruct.py
 *.gif

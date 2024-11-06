@@ -18,10 +18,12 @@ def load_signals(return_square=True, dir=None):
     rhos = []
     level = []
     case_signals_files = os.listdir(signal_dir)
-    case_signals_files = [f for f in case_signals_files if fnmatch.fnmatch(f, 'level_*_*.*')]
+    case_signals_files = [f for f in case_signals_files if fnmatch.fnmatch(f, 'level_*_*_*.*')]
+    case_signals_files = [f for f in case_signals_files if f.split('_')[3].split('.')[0] == '0'] # LIMITING TO 5,10,15,20
+    case_signals_files = [f for f in case_signals_files if f.split('_')[2] in ['5', '10', '15', '20']] # LIMITING TO 5,10,15,20
     def custom_sort(s):
         idx1 = int(s.split('_')[1]) 
-        idx2 = int(s.split('_')[2].split('.')[0]) 
+        idx2 = int(s.split('_')[2]) 
         return idx1, idx2
     case_signals_files = sorted(case_signals_files, key=custom_sort)
     

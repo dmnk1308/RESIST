@@ -1,34 +1,45 @@
-# General setting
-cases: all #[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14]
+cases: all
 resolution: 512
-model_3d: True
-
-# Data 
+model_3d: true
 raw_data_folder: data/raw/
-processed_data_folder: data/processed/all_rho 
+processed_data_folder: data/processed/ml4h_fixed
 dataset_data_folder: data/datasets/
-write_npz: True
-overwrite_npz: False
-write_dataset: False
-name_prefix: ""
-return_electrodes: True
-apply_rotation: False
-apply_translation: False
+write_npz: true
+overwrite_npz: false
+write_dataset: true
+name_prefix: 'ml4h_fixed'
+return_electrodes: true
+apply_rotation: true
+apply_translation: true
 translation_x: 0.5
 translation_y: 0.5
 translation_z: 0.3
-apply_subsampling: False
+apply_subsampling: true
 point_levels_3d: 15
 point_range_3d: 0.05
-multi_process: True
+multi_process: true
 num_workers: all
-all_signals: True
-signal_norm: all #all
-normalize_space: xy #xy
+all_signals: true
+signal_norm: all
+normalize_space: xy
 level_used: 4
-include_resistivities: all
-
-# Resistancies:
-# classes: [outside, background, lung, heart, bones, fat]
-# class_resistancies: [0., 0.3, 999, 0.7, 0.02, 0.025]
-# lung_resistancies: [0.2, 0.1, 0.06667, 0.05]  
+include_resistivities: [5,10,15,20]
+classes:
+- outside
+- background
+- lung
+- heart
+- bones
+- fat
+class_resistancies:
+- 0.0
+- 0.3
+- 999
+- 0.7
+- 0.02
+- 0.025
+lung_resistancies:
+- 0.2
+- 0.1
+- 0.06667
+- 0.05

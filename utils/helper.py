@@ -88,6 +88,9 @@ def get_all_cases(cfg: DictConfig, base_dir="..", use_raw=False):
             case_number for case_number in cases_number if case_number != 250
         ]
         cases_number = [
+            case_number for case_number in cases_number if case_number != 37
+        ]        
+        cases_number = [
             case_number for case_number in cases_number if case_number != 428
         ]
         cases_number = [
@@ -96,6 +99,18 @@ def get_all_cases(cfg: DictConfig, base_dir="..", use_raw=False):
         cases_number = [
             case_number for case_number in cases_number if case_number != 403
         ]
+        ############################
+        ### ADDED DUE TO MIRRORING
+        # cases_number = [
+        #     case_number for case_number in cases_number if (case_number > 299) or (case_number < 296)
+        # ]
+        # cases_number = [
+        #     case_number for case_number in cases_number if (case_number > 26) or (case_number < 19)
+        # ]
+        # cases_number = [
+        #     case_number for case_number in cases_number if case_number != 28
+        # ]
+        ############################
         cases_number.sort()
         cases = ["case_TCIA_" + str(case_number) + "_0" for case_number in cases_number]
         # idx = np.argsort(np.array(cases_number))
@@ -114,3 +129,24 @@ def set_seeds(seed=123):
     torch.random.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
+
+def r2_score(y, y_hat):
+    if isinstance(y, torch.Tensor):
+        # Convert input to numpy arrays for vectorized operations
+        y = y.numpy()
+    if isinstance(y_hat, torch.Tensor):
+        y_hat = y_hat.numpy()
+    
+    # Compute the mean of true values
+    y_mean = np.mean(y)
+    
+    # Compute total sum of squares (SST)
+    sst = np.sum((y - y_mean) ** 2)
+    
+    # Compute residual sum of squares (SSE)
+    sse = np.sum((y - y_hat) ** 2)
+    
+    # Compute R-squared
+    r2 = 1 - (sse / sst)
+    
+    return r2

@@ -1,14 +1,14 @@
-program: deep_eit/main.py
+program: resist/main.py
 name: sweep
 method: grid
 metric:
   goal: minimize
   name: val_lung_loss
 parameters:
-  learning.model.num_encoding_functions_electrodes:
-    values: [6, 8, 10, 12]
-  learning.model.num_encoding_functions_points:
-    values: [6, 8, 10, 12]
+  seed: 
+    values: [56, 67, 34, 89]
+  data.include_resistivities:
+    values: [[5, 15, 20], [5, 10, 20]]
 
 command:
   - ${env}
@@ -16,4 +16,4 @@ command:
   - ${program}
   - ${args_no_hyphens}
 
-# wandb sweep --project deep_eit deep_eit/cfg/sweep.yaml
+# wandb sweep --project resist resist/cfg/sweep.yaml

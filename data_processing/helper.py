@@ -267,27 +267,6 @@ def pad_to_shape_centered(array, target_shape, padding_value=0):
     return padded_array
 
 
-# sort list of strings by case first and then by resistivity
-def extract_keys(filename):
-    """
-    Extract the third-to-last and last numerical keys from a filename of the format 'abc_x_y_key.npz'.
-
-    Parameters:
-    filename (str): The filename to extract the keys from.
-
-    Returns:
-    tuple: A tuple containing the third-to-last and last numerical keys.
-    """
-    # Split the filename by underscores
-    parts = filename.split("_")
-    # Extract the third-to-last part (key1) and the last part (key2 with .npz extension)
-    key1 = int(parts[-3])
-    key2_with_extension = parts[-1]
-    # Remove the .npz extension to get the key2
-    key2 = int(key2_with_extension.split(".")[0])
-    return key1, key2
-
-
 def sort_filenames(filenames):
     """
     Sort a list of filenames by the third-to-last key first, and then by the last key.
@@ -298,7 +277,12 @@ def sort_filenames(filenames):
     Returns:
     list of str: The sorted list of filenames.
     """
-    return sorted(filenames, key=extract_keys)
+    list1 = [int(file.split('_')[2]) for file in filenames]
+    list2 = [int(file.split('_')[-2]) for file in filenames]
+
+    sorted_list = [x for _, _, x in sorted(zip(list1, list2, filenames), key=lambda pair: (pair[0], pair[1]))]
+
+    return sorted_list
 
 
 def erode_lung_masks(targets, conductivity=None, structure=30):

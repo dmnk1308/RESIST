@@ -2,11 +2,10 @@ import os
 import sys
 import torch
 sys.path.append("../..")
-from data_processing.dataset_3d import load_dataset_3d
+from data_processing.dataset import load_dataset_3d
 from train.training import training
 from train.testing import testing
 from utils.helper import get_all_cases, set_seeds
-from model.models import LinearModel
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import wandb
@@ -48,17 +47,12 @@ def main(cfg: DictConfig, inference=False):
 
     )
     run = wandb.init(
-        project="deep_eit",
+        project="resist",
         config=OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
         mode=cfg.wandb,
     )
-    if cfg.model_type == "resist":
-        model = hydra.utils.instantiate(cfg.learning.model)
-    elif cfg.model_type == "resist_single":
-        cfg.learning.model._target_ = "model.models.ResistMeanLung"
-        model = hydra.utils.instantiate(cfg.learning.model)
-    elif cfg.model_type == "linear":
-        model = LinearModel()
+    set_seeds(cfg.seed)
+    model = hydra.utils.instantiate(cfg.learning.model)
 
     if not cfg.inference:
         model = training(
@@ -73,7 +67,6 @@ def main(cfg: DictConfig, inference=False):
             device=cfg.learning.training.device,
             point_levels_3d=cfg.data.point_levels_3d,
             output_dir=output_dir,
-            lambda_tv=cfg.learning.training.lambda_tv
         )
         model.load_state_dict(
             torch.load(os.path.join(output_dir, "model.pt"))["model_state_dict"]
@@ -89,6 +82,7 @@ def main(cfg: DictConfig, inference=False):
         device=cfg.learning.training.device
     )
 
+
 if __name__ == "__main__":
-    set_seeds(12)
     main()
+ 

@@ -1,12 +1,22 @@
-side_processing/old
-deep_eit.*
+# Folder
 /data/
-outputs*
-*__pycache*
-singularity
-logs*
+side_processing/old
+outputs/*
+singularity/*
 wandb*
+*new/
+logs*
 figures
-*.gif
 archive
-
+results
+# Files
+*__pycache*
+*_linear.yaml
+deep_eit.*
+evaluation.py
+generate_figures.py
+*_new*
+playground*
+preprocess_real_data.ipynb
+testing_and_plotting*
+*.gif

@@ -1,10 +1,11 @@
 defaults:
 - _self_
-- data: data #data, data_linear
-- learning: learning #learning, learning_linear
+- data: data 
+- learning: learning 
 - hydra: hydra
 
-model_type: resist_single  # resist, resist_single, linear, ...
+model_type: resist  # resist, resist_single, linear, ...
+seed: 89 #12 23 34 45 56
 inference: False
 inference_path: outputs/2024-07-04/10-29-27
 wandb: 'online' # 'disabled', 'online', 'offline'

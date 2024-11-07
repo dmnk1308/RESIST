@@ -1,0 +1,86 @@
+model_type: resist
+seed: 67
+inference: false
+inference_path: outputs/2024-07-04/10-29-27
+wandb: online
+data:
+  cases: all
+  resolution: 512
+  model_3d: true
+  raw_data_folder: data/raw/
+  processed_data_folder: data/processed/ml4h_fixed
+  dataset_data_folder: data/datasets/
+  write_npz: true
+  overwrite_npz: false
+  write_dataset: true
+  name_prefix: ml4h_fixed
+  return_electrodes: true
+  apply_rotation: true
+  apply_translation: true
+  translation_x: 0.5
+  translation_y: 0.5
+  translation_z: 0.3
+  apply_subsampling: true
+  point_levels_3d: 15
+  point_range_3d: 0.05
+  multi_process: true
+  num_workers: all
+  all_signals: true
+  signal_norm: all
+  normalize_space: xy
+  level_used: 4
+  include_resistivities:
+  - 5
+  - 10
+  - 15
+  - 20
+  classes:
+  - outside
+  - background
+  - lung
+  - heart
+  - bones
+  - fat
+  class_resistancies:
+  - 0.0
+  - 0.3
+  - 999
+  - 0.7
+  - 0.02
+  - 0.025
+  lung_resistancies:
+  - 0.2
+  - 0.1
+  - 0.06667
+  - 0.05
+learning:
+  model:
+    _target_: model.models.AttentionModel
+    attention_on: sequence
+    num_attention_blocks: 5
+    num_encoding_functions_electrodes: 10
+    num_encoding_functions_points: 10
+    pos_encoding: true
+    attention_dim: 256
+    dropout_attention: 0.2
+    num_electrodes: 16
+    num_linear_output_blocks: 3
+    linear_output_channels: 256
+    use_tissue_embedding: false
+    use_tissue_body_only: false
+    emb_dropout: 0.0
+    signal_emb: 8
+    prob_dropout: 0.1
+  training:
+    epochs: 200
+    batch_size_train: 4
+    learning_rate: 5.0e-05
+    loss_lung_multiplier: 8
+    sample_points: 100000
+    device: cuda
+  validation:
+    batch_size_val: 1
+    downsample_factor_val: 2
+  testing:
+    batch_size_test: 1
+    downsample_factor_test: 2

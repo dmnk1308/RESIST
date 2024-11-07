@@ -1,25 +1,16 @@
 # Folder
-/data/
-side_processing/old
+data/
 outputs/*
 singularity/*
-wandb*
-*new/
+wandb/*
+notebooks/*
 logs*
-figures
+new/
 archive
-results
+results/
 # Files
 *__pycache*
 *_linear.yaml
 deep_eit.*
 evaluation.py
 generate_figures.py
-*_new*
-playground*
-preprocess_real_data.ipynb
-testing_and_plotting*
-results.md
-plotting_helper.py
-reconstruct.py
-*.gif

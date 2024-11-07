@@ -6,13 +6,14 @@ import torch
 from train.testing import testing
 from data_processing.obj2py import read_get
 from data_processing.helper import combine_electrode_positions
-from plotting_helper import *
+from utils.plotting_helper import *
 import argparse
 
 def reconstruct(data, 
                 model_path=None, 
                 electrodes=None, 
                 points=None, 
+                n_electrodes=16,
                 device='cuda', 
                 resolution=512, 
                 zpos=None, 
@@ -21,8 +22,10 @@ def reconstruct(data,
                 z_padding=0,
                 multiplier=1000/4.5,
                 verbose=True,
-                load_std_files=True,
+                notebook=False,
                 return_aspect_ratio=False):
+    n_signals = int(n_electrodes * (n_electrodes - 3))
+    
     # get directories
     script_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(script_dir)
@@ -30,30 +33,31 @@ def reconstruct(data,
     # load model and normalizing statistics
     if model_path is None:
         model_path = os.path.join(script_dir, 'outputs', 'resist')
-        model_path = os.path.relpath(model_path,script_dir)
-    model, cfg = load_model(model_path, device='cuda')
+        model_path = os.path.relpath(model_path, script_dir)
+    model, cfg = load_model(model_path, device='cuda', notebook=notebook, ckpt_name='model.pt')
 
     try:
         signals_mean = torch.load(os.path.join(cfg.data.dataset_data_folder, f'train_dataset{cfg.data.name_prefix}.pt')).train_mean.numpy()
         signals_std = torch.load(os.path.join(cfg.data.dataset_data_folder, f'train_dataset{cfg.data.name_prefix}.pt')).train_std.numpy()
         points_max = torch.load(os.path.join(cfg.data.dataset_data_folder, f'train_dataset{cfg.data.name_prefix}.pt')).points_max.numpy()
         points_min = torch.load(os.path.join(cfg.data.dataset_data_folder, f'train_dataset{cfg.data.name_prefix}.pt')).points_min.numpy()
-        if not os.path.exists('outputs/resist/signals_mean.npy'):
-            np.save('outputs/resist/signals_mean.npy', signals_mean)
-            np.save('outputs/resist/signals_std.npy', signals_std)
-            np.save('outputs/resist/points_max.npy', points_max)
-            np.save('outputs/resist/points_min.npy', points_min)
+        if not os.path.exists(os.path.join(model_path, 'signals_mean.npy')):
+            np.save(os.path.join(model_path, 'signals_mean.npy', signals_mean))
+            np.save(os.path.join(model_path, 'signals_std.npy', signals_std))
+            np.save(os.path.join(model_path, 'points_max.npy', points_max))
+            np.save(os.path.join(model_path, 'points_min.npy', points_min))
     except:
         print('Could not load normalizing statistics, loading from file instead.')
-        signals_mean = np.load('outputs/resist/signals_mean.npy')
-        signals_std = np.load('outputs/resist/signals_std.npy')
-        points_max = np.load('outputs/resist/points_max.npy')
-        points_min = np.load('outputs/resist/points_min.npy')
+        signals_mean = np.load(os.path.join(model_path, 'signals_mean.npy'))
+        signals_std = np.load(os.path.join(model_path, 'signals_std.npy'))
+        points_max = np.load(os.path.join(model_path, 'points_max.npy'))
+        points_min = np.load(os.path.join(model_path, 'points_min.npy'))
 
     # load signals
     if isinstance(data, np.ndarray):
         signals = data
-    
+    elif data.endswith('.npy'):
+        signals = np.load(data)
     elif os.path.isdir(data):
         signals = []
 
@@ -65,18 +69,18 @@ def reconstruct(data,
                 print('No .npy files found, try .get files instead.')
             files_signals = [os.path.join(data, f) for f in files if fnmatch.fnmatch(f, '*.get')]
             for p in files_signals:
-                signals.append(read_get(p)[:208])
+                signals.append(read_get(p)[:n_signals])
         else:
             for p in files_signals:
-                signals.append(np.load(p)[:208])
+                signals.append(np.load(p)[:n_signals])
         if verbose:
             print('Using the following files and ordering:', files_signals)
         signals = np.stack(signals, axis=0)
     else:
         if verbose:
             print('Using the following single file:', data)
-        signals = read_get(data)[:208]
-    signals = signals.reshape(-1, 16, 13)*multiplier
+        signals = read_get(data)[:n_signals]
+    signals = signals.reshape(-1, n_electrodes, (n_electrodes-3))*multiplier
 
     # load electrodes position if available, otherwise use default and interplolate number of levels
     if electrodes is None:
@@ -86,9 +90,10 @@ def reconstruct(data,
         electrodes = electrodes.reshape(4,-1,3)
         electrodes = np.linspace(electrodes[0], electrodes[-2], signals.shape[0])
     else:
-        print(f'Use electrodes at {electrodes}.')
+        if verbose:
+            print(f'Use electrodes at {electrodes}.')
         electrodes = np.load(electrodes)
-        electrodes = electrodes.reshape(-1, 16, 3)
+        electrodes = electrodes.reshape(-1, n_electrodes, 3)
         electrodes = electrodes - electrodes[0,0].reshape(1,1,3)
     if return_aspect_ratio:
         max, min = electrodes.reshape(-1,3).max(axis=0), electrodes.reshape(-1,3).min(axis=0)
@@ -99,7 +104,7 @@ def reconstruct(data,
         aspect_ratio_coronal = z_dist / x_dist
         aspect_ratio_sagittal = z_dist / y_dist
         aspect_ratio = [aspect_ratio_axial, aspect_ratio_coronal, aspect_ratio_sagittal]
-    electrodes = electrodes.reshape(-1, 16, 3)
+    electrodes = electrodes.reshape(-1, n_electrodes, 3)
     signals_mean = signals_mean[:,:signals.shape[0]]
     signals_std = signals_std[:,:signals.shape[0]]
 

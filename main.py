@@ -9,20 +9,23 @@ from utils.helper import get_all_cases, set_seeds
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import wandb
+from datetime import datetime
+import uuid
 
+script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+os.chdir(script_dir)
+unique_id = f"{datetime.now().strftime('%Y-%m-%d/%H-%M-%S')}_{uuid.uuid4().hex[:8]}"
+os.environ["RUN_ID"] = unique_id  # Set as an environment variable
 
 @hydra.main(version_base=None, config_path="cfg", config_name="config")
 def main(cfg: DictConfig, inference=False):
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    base_dir = os.path.dirname(script_dir)
+    # script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
     output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
-    os.chdir(script_dir)
-    cases = get_all_cases(cfg, base_dir=script_dir, use_raw=True)
-
+    cases = get_all_cases(cfg, base_dir="", use_raw=True)
     train_dataset, val_dataset, test_dataset = load_dataset_3d(
         cases,
         resolution=cfg.data.resolution,
-        base_dir=script_dir,
+        base_dir='',
         raw_data_folder=cfg.data.raw_data_folder,
         processed_data_folder=cfg.data.processed_data_folder,
         dataset_data_folder=cfg.data.dataset_data_folder,

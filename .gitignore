@@ -7,7 +7,6 @@ notebooks/*
 logs*
 new/
 archive
-results/metrics
 results/trained_models
 # Files
 *__pycache*

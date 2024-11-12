@@ -22,5 +22,7 @@ def convert_to_grayscale(image_path):
 
 if __name__ == "__main__":
     for filename in os.listdir():
-        if filename.endswith(".png"):
+        if filename.endswith("-gray.png"):
+            continue
+        elif filename.endswith(".png"):
             convert_to_grayscale(filename)
